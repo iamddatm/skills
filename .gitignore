@@ -1,0 +1,19 @@
+# Playwright MCP 输出（截图等本地产物）
+.playwright-mcp/
+
+# 本地工具链文件（Claude Code 指令、skill 测试提示词）
+CLAUDE.md
+test-prompts.json
+
+# 操作系统生成的杂项文件
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 编辑器 / IDE 临时文件
+*.swp
+*~
+.idea/
+.vscode/
+
+result-card.png
