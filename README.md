@@ -12,6 +12,7 @@ A collection of AI coding skills for Chinese-speaking developers — including t
 
 | Skill / 技能 | Description / 说明 | Type / 类型 | Source / 来源 |
 |---|---|---|---|
+| [claude-code-native-update](skills/claude-code-native-update) | Windows 受限网络环境下安装、更新或迁移 Claude Code 原生版：本地代理手动下载 + SHA256 校验 + 离线部署 | 原创 | — |
 | [dotnet-best-practices](skills/dotnet-best-practices) | .NET/C# 代码最佳实践规范检查 | 翻译 | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
 | [dotnet-production-debug](skills/dotnet-production-debug) | .NET 生产环境性能故障排查：CPU 飙高、内存泄漏/OOM、死锁/卡死、崩溃、GC 异常与 dump 分析 | 原创 | — |
 | [wpf-stylet](skills/wpf-stylet) | WPF + Stylet MVVM 框架开发指南：生命周期、Conductor 导航、弹窗、命令绑定与依赖注入 | 原创 | — |
@@ -38,19 +39,19 @@ Install skills with one command — auto-detects your AI agent and places files 
 
 ```bash
 # 安装本仓库全部技能 / Install all skills from this repo
-npx skills add iamddatm/awesome-copilot
+npx skills add iamddatm/skills
 
 # 安装指定技能 / Install a specific skill
-npx skills add iamddatm/awesome-copilot --skill dotnet-best-practices
+npx skills add iamddatm/skills --skill dotnet-best-practices
 
 # 指定目标 agent / Target a specific agent
-npx skills add iamddatm/awesome-copilot --skill dotnet-best-practices -a claude-code
+npx skills add iamddatm/skills --skill dotnet-best-practices -a claude-code
 
 # 全局安装（所有项目可用）/ Install globally (available in all projects)
-npx skills add iamddatm/awesome-copilot -g
+npx skills add iamddatm/skills -g
 
 # 查看仓库中有哪些技能 / List available skills
-npx skills add iamddatm/awesome-copilot --list
+npx skills add iamddatm/skills --list
 ```
 
 > 支持的 agent 包括 Claude Code、Cursor、Codex、OpenCode 等。
