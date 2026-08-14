@@ -15,9 +15,9 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
 
 ## 提问并等待回答
 
-1. 将本 `SKILL.md` 所在目录解析为 `ASK_UI_SKILL_DIR`。
+1. 将本 `SKILL.md` 所在目录解析为 `ASK_UI_SKILL_DIR`（例如 `~/.claude/skills/ask-ui` 或项目中对应的路径）。
 2. 创建 JSON 前先阅读 [references/schema.md](references/schema.md)。
-3. 创建 QuestionSet JSON 文件。新任务省略 `sessionId`；后续轮次复用已有的 `sessionId` 并设置 `basedOnRound`。
+3. 将 QuestionSet JSON 写入临时文件（如 `$TEMP/ask-ui-questions.json`）。新任务省略 `sessionId`；后续轮次复用已有的 `sessionId` 并设置 `basedOnRound`。
 4. 运行前台命令，保持工具调用处于活跃状态直到退出：
 
    ```text
@@ -29,6 +29,48 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
 7. 如果还需要更多独立问题，用相同的 `sessionId` 再次调用 `ask`，并将 `basedOnRound` 设为返回的轮次号。不再需要更多问题时，结束会话。
 
 仅在浏览器打开已由外部管理时使用 `--no-open`。仅在需要固定本地端口时使用 `--port <number>`。
+
+**最小完整示例**（3 个问题，含推荐答案）：
+
+```json
+{
+  "sessionTitle": "功能方向确认",
+  "title": "第一轮",
+  "questions": [
+    {
+      "id": "layout",
+      "type": "single",
+      "title": "布局方式",
+      "options": [
+        { "id": "tabs", "label": "Tab 切换" },
+        { "id": "sidebar", "label": "侧边栏" }
+      ],
+      "recommendedOptionIds": ["tabs"]
+    },
+    {
+      "id": "modules",
+      "type": "multiple",
+      "title": "首期模块",
+      "options": [
+        { "id": "tasks", "label": "任务" },
+        { "id": "notes", "label": "笔记" },
+        { "id": "calendar", "label": "日历" }
+      ],
+      "recommendedOptionIds": ["tasks"],
+      "allowOther": true,
+      "minSelections": 1,
+      "maxSelections": 3
+    },
+    {
+      "id": "context",
+      "type": "text",
+      "title": "补充说明",
+      "required": false,
+      "recommendedDraft": "先做本地单人版本。"
+    }
+  ]
+}
+```
 
 ## 手动回退与恢复
 
