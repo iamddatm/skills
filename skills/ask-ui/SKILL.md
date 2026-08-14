@@ -80,14 +80,10 @@ ask-ui-session: <sessionId>
 
 | 🔴 禁止行为 | 触发条件 | 正确做法 |
 |---|---|---|
-| 覆盖已提交的 `answers.json` | 用户提交后需要修改答案 | 新建 Round 放修正内容 |
-| 重复处理"已提交"消息 | 用户重复发送"已提交" | 仅在成功读取 `submitted` 轮次后才能创建新一轮 |
-| 在 `ask` 模式下让用户回复"已提交" | `ask` 命令正在阻塞等待 | `ask` 提交后自动返回，无需用户手动确认 |
-| 猜测 Codex thread id | 需要 Codex 唤醒但缺少 sessionRef | 必须由宿主提供，猜测会导致无效唤醒 |
-| 单问题启动 Ask UI | 只有 1 个独立问题 | 直接在对话中提问 |
-| 结束 Agent 回合（`ask` 模式） | `ask` 命令阻塞等待中 | 保持工具调用活跃直到用户提交 |
-| 跳过 schema.md 直接构造 JSON | 时间紧张或问题简单 | 必须先读 schema.md 再构造，防止字段遗漏 |
-| 为已完成的 Session 创建新 Round | Session 状态为 `completed` | 创建新 Session |
+| 覆盖已提交的 `answers.json` | 用户提交后需要修改 | 新建 Round 放修正，已提交文件不可变 |
+| 为已完成的 Session 追加 Round | Session 状态为 `completed` | 创建新 Session |
+| 能 `ask` 却用 `create` 逃避等待 | 不想阻塞工具调用 | 优先 `ask`；仅在前台等待不可用时才 `create` |
+| 在 CI / 无头环境不设 `--data-dir` | 自动化流水线 | 显式指定 `--data-dir`，避免数据散落在工作目录 |
 
 ## 可选的主动唤醒
 
