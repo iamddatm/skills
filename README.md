@@ -16,6 +16,7 @@
 | [claude-code-native-update](skills/claude-code-native-update) | Windows 受限网络环境下安装、更新或迁移 Claude Code 原生版：本地代理手动下载 + SHA256 校验 + 离线部署 | 原创 | — |
 | [dotnet-best-practices](skills/dotnet-best-practices) | .NET/C# 代码最佳实践规范检查 | 翻译 | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
 | [dotnet-production-debug](skills/dotnet-production-debug) | .NET 生产环境性能故障排查：CPU 飙高、内存泄漏/OOM、死锁/卡死、崩溃、GC 异常与 dump 分析 | 原创 | — |
+| [grill-with-docs-ui](skills/grill-with-docs-ui) | 表单模式拷问：grilling 前沿轮次提问经 ask-ui 本地交互式表单进行，沿途产出 ADR 与术语表；依赖 grilling、domain-modeling、ask-ui | 改编 | [grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
 | [wpf-stylet](skills/wpf-stylet) | WPF + Stylet MVVM 框架开发指南：生命周期、Conductor 导航、弹窗、命令绑定与依赖注入 | 原创 | — |
 
 ## 什么是技能？

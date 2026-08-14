@@ -16,6 +16,7 @@ A collection of AI coding skills for Chinese-speaking developers — including t
 | [claude-code-native-update](skills/claude-code-native-update) | Install, update, or migrate to the native Claude Code on Windows in restricted network environments: manual download via local proxy + SHA256 verification + offline deployment | Original | — |
 | [dotnet-best-practices](skills/dotnet-best-practices) | Best-practice convention checks for .NET/C# code | Translated | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
 | [dotnet-production-debug](skills/dotnet-production-debug) | .NET production performance troubleshooting: CPU spikes, memory leaks/OOM, deadlocks/hangs, crashes, GC anomalies and dump analysis | Original | — |
+| [grill-with-docs-ui](skills/grill-with-docs-ui) | Form-mode grill-with-docs: grilling's frontier rounds are asked through an ask-ui local interactive form, producing ADRs and a glossary along the way; requires grilling, domain-modeling and ask-ui | Adapted | [grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
 | [wpf-stylet](skills/wpf-stylet) | WPF + Stylet MVVM framework guide: lifecycle, Conductor navigation, dialogs, command binding and dependency injection | Original | — |
 
 ## What Are Skills?
