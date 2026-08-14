@@ -15,7 +15,7 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
 
 ## 提问并等待回答
 
-1. 将本 `SKILL.md` 所在目录解析为 `ASK_UI_SKILL_DIR`（例如 `~/.claude/skills/ask-ui` 或项目中对应的路径）。
+1. 将本 `SKILL.md` 所在目录解析为 `ASK_UI_SKILL_DIR`（即当前技能安装目录的绝对路径）。
 2. 创建 JSON 前先阅读 [references/schema.md](references/schema.md)。
 3. 将 QuestionSet JSON 写入临时文件（如 `$TEMP/ask-ui-questions.json`）。新任务省略 `sessionId`；后续轮次复用已有的 `sessionId` 并设置 `basedOnRound`。
 4. 运行前台命令，保持工具调用处于活跃状态直到退出：
@@ -29,6 +29,8 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
 7. 如果还需要更多独立问题，用相同的 `sessionId` 再次调用 `ask`，并将 `basedOnRound` 设为返回的轮次号。不再需要更多问题时，结束会话。
 
 仅在浏览器打开已由外部管理时使用 `--no-open`。仅在需要固定本地端口时使用 `--port <number>`。
+
+**问题备注**：每个问题的答案支持可选的 `notes` 字段（最大 2000 字符），用户可在表单上对任意问题补充说明或修正。例如 grilling 产出的选项不完全准确时，用户可在备注中说明。构造 QuestionSet 时无需设置，notes 由用户在表单中填写并随答案一起返回。
 
 **最小完整示例**（3 个问题，含推荐答案）：
 
@@ -71,8 +73,6 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
   ]
 }
 ```
-
-**问题备注**：每个问题的答案支持可选的 `notes` 字段（最大 2000 字符），用户可在表单上对任意问题补充说明或修正。例如 grilling 产出的选项不完全准确时，用户可在备注中说明。构造 QuestionSet 时无需设置，notes 由用户在表单中填写并随答案一起返回。
 
 ## 手动回退与恢复
 
@@ -140,6 +140,8 @@ ask-ui-session: <sessionId>
 | 为已完成的 Session 追加 Round | Session 状态为 `completed` | 创建新 Session |
 | 能 `ask` 却用 `create` 逃避等待 | 不想阻塞工具调用 | 优先 `ask`；仅在前台等待不可用时才 `create` |
 | 在 CI / 无头环境不设 `--data-dir` | 自动化流水线 | 显式指定 `--data-dir`，默认临时目录可能在 CI 重启后丢失 |
+| 多个任务混用同一个 `sessionId` | 并行处理多个独立任务 | 一个任务对应一个 session，不同任务用不同 `sessionId` |
+| `ask` 阻塞期间发起新的 `ask` / `create` | 当前轮次尚未提交 | 等当前轮次提交返回后再操作下一轮 |
 
 ## 可选的主动唤醒
 
