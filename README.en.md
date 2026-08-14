@@ -12,6 +12,7 @@ A collection of AI coding skills for Chinese-speaking developers — including t
 
 | Skill | Description | Type | Source |
 |---|---|---|---|
+| [ask-ui](skills/ask-ui) | Render multiple independent questions from an Agent workflow as a local interactive form with preselected recommendations, auto-saved drafts, and per-question notes | Adapted | [ask-ui](https://github.com/Angus221/ak.skills_sample/tree/main/skills/ask-ui) |
 | [claude-code-native-update](skills/claude-code-native-update) | Install, update, or migrate to the native Claude Code on Windows in restricted network environments: manual download via local proxy + SHA256 verification + offline deployment | Original | — |
 | [dotnet-best-practices](skills/dotnet-best-practices) | Best-practice convention checks for .NET/C# code | Translated | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
 | [dotnet-production-debug](skills/dotnet-production-debug) | .NET production performance troubleshooting: CPU spikes, memory leaks/OOM, deadlocks/hangs, crashes, GC anomalies and dump analysis | Original | — |
