@@ -82,10 +82,11 @@ ask-ui-session: <sessionId>
 |---|---|---|
 | `node` 命令不可用或路径无法访问 | 检查 Node.js 安装（需 ≥ 18） | 回退到纯文本格式向用户提问 |
 | QuestionSet JSON 格式错误导致脚本退出 | 检查 stderr 输出的错误信息，修正 JSON 后重试 | 回退到纯文本格式 |
-| 脚本静默退出（无 stdout/stderr） | 可能是 `isMain` 守卫失败；用包装脚本动态 import 后调用 `main()` | 报告问题，回退到纯文本 |
+| 脚本静默退出（无 stdout/stderr，退出码 0） | 回退到纯文本格式向用户提问 | 报告脚本 bug 并附上 stderr 诊断信息 |
 | 浏览器未自动打开 | 从 stderr 提取 URL，告知用户手动在浏览器中打开 | 改用 `create` 分离模式 |
 | 端口被占用 | 用 `--port <number>` 指定可用端口 | 改用 `create` 分离模式 |
-| `resume` 返回 `ambiguous` | 根据返回的候选列表中的主题、工作区、提交时间推断最佳匹配 | 询问用户选择 |
+| CI / 无头环境无浏览器 | 使用 `create` 分离模式 + 显式 `--data-dir` | 回退到纯文本格式 |
+| `ask` 进程长时间无响应 | 终止进程，用 `complete` 清理脏 Session，重新启动 | 改用 `create` 分离模式 |
 
 ## 反例与禁止操作
 
