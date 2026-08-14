@@ -15,9 +15,9 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
 
 ## 提问并等待回答
 
-1. 将本 `SKILL.md` 所在目录解析为 `ASK_UI_SKILL_DIR`。
+1. 将本 `SKILL.md` 所在目录解析为 `ASK_UI_SKILL_DIR`（例如 `~/.claude/skills/ask-ui` 或项目中对应的路径）。
 2. 创建 JSON 前先阅读 [references/schema.md](references/schema.md)。
-3. 创建 QuestionSet JSON 文件。新任务省略 `sessionId`；后续轮次复用已有的 `sessionId` 并设置 `basedOnRound`。
+3. 将 QuestionSet JSON 写入临时文件（如 `$TEMP/ask-ui-questions.json`）。新任务省略 `sessionId`；后续轮次复用已有的 `sessionId` 并设置 `basedOnRound`。
 4. 运行前台命令，保持工具调用处于活跃状态直到退出：
 
    ```text
@@ -29,6 +29,50 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
 7. 如果还需要更多独立问题，用相同的 `sessionId` 再次调用 `ask`，并将 `basedOnRound` 设为返回的轮次号。不再需要更多问题时，结束会话。
 
 仅在浏览器打开已由外部管理时使用 `--no-open`。仅在需要固定本地端口时使用 `--port <number>`。
+
+**最小完整示例**（3 个问题，含推荐答案）：
+
+```json
+{
+  "sessionTitle": "功能方向确认",
+  "title": "第一轮",
+  "questions": [
+    {
+      "id": "layout",
+      "type": "single",
+      "title": "布局方式",
+      "options": [
+        { "id": "tabs", "label": "Tab 切换" },
+        { "id": "sidebar", "label": "侧边栏" }
+      ],
+      "recommendedOptionIds": ["tabs"]
+    },
+    {
+      "id": "modules",
+      "type": "multiple",
+      "title": "首期模块",
+      "options": [
+        { "id": "tasks", "label": "任务" },
+        { "id": "notes", "label": "笔记" },
+        { "id": "calendar", "label": "日历" }
+      ],
+      "recommendedOptionIds": ["tasks"],
+      "allowOther": true,
+      "minSelections": 1,
+      "maxSelections": 3
+    },
+    {
+      "id": "context",
+      "type": "text",
+      "title": "补充说明",
+      "required": false,
+      "recommendedDraft": "先做本地单人版本。"
+    }
+  ]
+}
+```
+
+**问题备注**：每个问题的答案支持可选的 `notes` 字段（最大 2000 字符），用户可在表单上对任意问题补充说明或修正。例如 grilling 产出的选项不完全准确时，用户可在备注中说明。构造 QuestionSet 时无需设置，notes 由用户在表单中填写并随答案一起返回。
 
 ## 手动回退与恢复
 
@@ -75,6 +119,27 @@ ask-ui-session: <sessionId>
 - 不得覆盖已提交的问题或答案。
 - 修正和补充确认放在新的 Round 中。
 - 仅在新任务、已完成的任务或用户明确要求重新开始时才创建新 Session。
+
+## 故障处理
+
+| 触发条件 | 一线修复 | 仍失败兜底 |
+|---|---|---|
+| `node` 命令不可用或路径无法访问 | 检查 Node.js 安装（需 ≥ 18） | 回退到纯文本格式向用户提问 |
+| QuestionSet JSON 格式错误导致脚本退出 | 检查 stderr 输出的错误信息，修正 JSON 后重试 | 回退到纯文本格式 |
+| 脚本静默退出（无 stdout/stderr，退出码 0） | 回退到纯文本格式向用户提问 | 报告脚本 bug 并附上 stderr 诊断信息 |
+| 浏览器未自动打开 | 从 stderr 提取 URL，告知用户手动在浏览器中打开 | 改用 `create` 分离模式 |
+| 端口被占用 | 用 `--port <number>` 指定可用端口 | 改用 `create` 分离模式 |
+| CI / 无头环境无浏览器 | 使用 `create` 分离模式 + 显式 `--data-dir` | 回退到纯文本格式 |
+| `ask` 进程长时间无响应 | 终止进程，用 `complete` 清理脏 Session，重新启动 | 改用 `create` 分离模式 |
+
+## 反例与禁止操作
+
+| 🔴 禁止行为 | 触发条件 | 正确做法 |
+|---|---|---|
+| 覆盖已提交的 `answers.json` | 用户提交后需要修改 | 新建 Round 放修正，已提交文件不可变 |
+| 为已完成的 Session 追加 Round | Session 状态为 `completed` | 创建新 Session |
+| 能 `ask` 却用 `create` 逃避等待 | 不想阻塞工具调用 | 优先 `ask`；仅在前台等待不可用时才 `create` |
+| 在 CI / 无头环境不设 `--data-dir` | 自动化流水线 | 显式指定 `--data-dir`，避免数据散落在工作目录 |
 
 ## 可选的主动唤醒
 

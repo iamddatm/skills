@@ -453,6 +453,58 @@ textarea:focus-visible {
   text-align: right;
 }
 
+.notes-wrapper {
+  margin-top: 8px;
+}
+
+.notes-label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.notes-input {
+  width: 100%;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+}
+
+.notes-input:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.notes-readonly {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  background: var(--surface-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.notes-readonly .notes-label {
+  display: inline;
+  margin-bottom: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.notes-readonly .notes-text {
+  color: var(--text);
+}
+
 .recommendation {
   margin: 7px 0 0;
   width: fit-content;

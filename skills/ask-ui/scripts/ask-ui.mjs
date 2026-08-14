@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { constants as fsConstants, createReadStream, existsSync } from 'node:fs';
+import { constants as fsConstants, createReadStream, existsSync, realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import http from 'node:http';
 import os from 'node:os';
@@ -103,39 +103,35 @@ async function atomicWriteJson(file, value) {
 }
 
 async function ensureDataRoot(requested, cwd = process.cwd()) {
-  const primary = requested
-    ? path.resolve(requested)
-    : path.join(path.resolve(cwd), '.ask-ui');
+  // 显式指定 --data-dir 时直接使用，失败则抛出异常
+  if (requested) {
+    const resolved = path.resolve(requested);
+    await fs.mkdir(resolved, { recursive: true });
+    await fs.access(resolved, fsConstants.W_OK);
+    return resolved;
+  }
+
+  // 默认使用状态目录，避免在用户工作目录下产生 .ask-ui/ 文件夹
+  const stateBase = process.platform === 'win32'
+    ? process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
+    : process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
+  const primary = path.join(stateBase, 'ask-ui');
 
   try {
     await fs.mkdir(primary, { recursive: true });
     await fs.access(primary, fsConstants.W_OK);
-    if (path.basename(primary) === '.ask-ui') {
-      const ignoreFile = path.join(primary, '.gitignore');
-      if (!existsSync(ignoreFile)) {
-        await fs.writeFile(ignoreFile, '*\n!.gitignore\n', 'utf8');
-      }
-    }
     return primary;
-  } catch (error) {
-    if (requested) throw error;
+  } catch {
+    // 状态目录不可用时回退到 cwd/.ask-ui
   }
 
-  const workspaceHash = createHash('sha256')
-    .update(path.resolve(cwd))
-    .digest('hex')
-    .slice(0, 16);
-  const stateBase = process.platform === 'win32'
-    ? process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
-    : process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
-  const fallback = path.join(stateBase, 'ask-ui', 'workspaces', workspaceHash);
-  await fs.mkdir(fallback, { recursive: true });
-  await atomicWriteJson(path.join(fallback, 'workspace.json'), {
-    cwd: path.resolve(cwd),
-    fallback: true,
-    updatedAt: now(),
-  });
-  return fallback;
+  const fallbackDir = path.join(path.resolve(cwd), '.ask-ui');
+  await fs.mkdir(fallbackDir, { recursive: true });
+  const ignoreFile = path.join(fallbackDir, '.gitignore');
+  if (!existsSync(ignoreFile)) {
+    await fs.writeFile(ignoreFile, '*\n!.gitignore\n', 'utf8');
+  }
+  return fallbackDir;
 }
 
 function normalizeWake(rawWake, cwd) {
@@ -399,10 +395,12 @@ function normalizeAnswer(answer, question) {
     ? [...new Set(answer.selectedOptionIds.map(String))]
     : [];
   const customText = String(answer?.customText || '');
+  const notes = String(answer?.notes || '');
   return {
     questionId: question.id,
     selectedOptionIds: selected,
     customText,
+    notes,
   };
 }
 
@@ -411,8 +409,12 @@ function validateAnswers(questionSet, rawAnswers, { partial = false } = {}) {
     (Array.isArray(rawAnswers) ? rawAnswers : []).map((answer) => [String(answer.questionId), answer]),
   );
   const errors = [];
+  const NOTES_MAX_LENGTH = 2000;
   const answers = questionSet.questions.map((question) => {
     const answer = normalizeAnswer(answerMap.get(question.id), question);
+    if (answer.notes.length > NOTES_MAX_LENGTH) {
+      errors.push(`${question.title} notes exceed ${NOTES_MAX_LENGTH} characters`);
+    }
     if (question.type === 'text') {
       if (!partial && question.required && !answer.customText.trim()) {
         errors.push(`${question.title} is required`);
@@ -1020,9 +1022,19 @@ export async function main(argv = process.argv.slice(2)) {
   help();
 }
 
-const isMain = process.argv[1]
-  && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url;
-if (isMain) {
+// 判断当前模块是否为 CLI 入口。
+// 使用 realpathSync 消除符号链接与沙箱路径虚拟化导致的 URL 不一致；
+// realpath 解析失败时按文件名兜底，保证 CLI 入口可用。
+function isMainModule() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return path.basename(process.argv[1]) === path.basename(fileURLToPath(import.meta.url));
+  }
+}
+
+if (isMainModule()) {
   main().catch((error) => {
     process.stderr.write(`${JSON.stringify({ error: error.message })}\n`);
     process.exitCode = 1;
