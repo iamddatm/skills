@@ -76,6 +76,19 @@ ask-ui-session: <sessionId>
 - 修正和补充确认放在新的 Round 中。
 - 仅在新任务、已完成的任务或用户明确要求重新开始时才创建新 Session。
 
+## 反例与禁止操作
+
+| 🔴 禁止行为 | 触发条件 | 正确做法 |
+|---|---|---|
+| 覆盖已提交的 `answers.json` | 用户提交后需要修改答案 | 新建 Round 放修正内容 |
+| 重复处理"已提交"消息 | 用户重复发送"已提交" | 仅在成功读取 `submitted` 轮次后才能创建新一轮 |
+| 在 `ask` 模式下让用户回复"已提交" | `ask` 命令正在阻塞等待 | `ask` 提交后自动返回，无需用户手动确认 |
+| 猜测 Codex thread id | 需要 Codex 唤醒但缺少 sessionRef | 必须由宿主提供，猜测会导致无效唤醒 |
+| 单问题启动 Ask UI | 只有 1 个独立问题 | 直接在对话中提问 |
+| 结束 Agent 回合（`ask` 模式） | `ask` 命令阻塞等待中 | 保持工具调用活跃直到用户提交 |
+| 跳过 schema.md 直接构造 JSON | 时间紧张或问题简单 | 必须先读 schema.md 再构造，防止字段遗漏 |
+| 为已完成的 Session 创建新 Round | Session 状态为 `completed` | 创建新 Session |
+
 ## 可选的主动唤醒
 
 Ask UI 支持 Claude Code 和 Codex App Server 的可选唤醒元数据。将其视为增强功能而非必需。
