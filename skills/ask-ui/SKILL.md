@@ -25,8 +25,29 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
    ```
 
 5. 该命令将就绪信息和本地 URL 写入 stderr，打开表单并等待。不要结束 Agent 回合，也不要让用户回复"已提交"。
-6. 用户提交后，解析写入 stdout 的单条 JSON 结果，立即继续原来的工作流。
-7. 如果还需要更多独立问题，用相同的 `sessionId` 再次调用 `ask`，并将 `basedOnRound` 设为返回的轮次号。不再需要更多问题时，结束会话。
+6. 用户提交后，解析写入 stdout 的单条 JSON 结果，立即继续原来的工作流。返回格式示例：
+
+   ```json
+   {
+     "status": "submitted",
+     "sessionId": "feature-confirm-20260814-a1b2",
+     "sessionTitle": "功能方向确认",
+     "roundNumber": 1,
+     "questions": { "questions": [] },
+     "answers": {
+       "sessionId": "feature-confirm-20260814-a1b2",
+       "roundNumber": 1,
+       "submittedAt": "2026-08-14T10:30:00.000Z",
+       "answers": [
+         { "questionId": "layout", "selectedOptionIds": ["tabs"], "customText": "", "notes": "" },
+         { "questionId": "modules", "selectedOptionIds": ["tasks", "notes"], "customText": "", "notes": "日历放到下期" },
+         { "questionId": "context", "selectedOptionIds": [], "customText": "先做 MVP", "notes": "" }
+       ]
+     }
+   }
+   ```
+
+7. 如果还需要更多独立问题，用相同的 `sessionId` 再次调用 `ask`，并将 `basedOnRound` 设为返回的轮次号。不再需要更多问题时，运行 `complete` 结束会话。
 
 仅在浏览器打开已由外部管理时使用 `--no-open`。仅在需要固定本地端口时使用 `--port <number>`。
 
@@ -76,6 +97,8 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
 
 ## 手动回退与恢复
 
+🔴 **切换到 `create` 模式前**：确认用户理解分离模式的工作方式——用户需要自行打开 URL、填写表单、提交后回复"已提交"。如果用户不熟悉此流程，先在对话中简要说明。
+
 当前台工具调用无法保持活跃、本地浏览器无法连接临时服务器、或需要恢复被中断的直连轮次时，使用分离式工作流：
 
 ```text
@@ -101,7 +124,7 @@ ask-ui-session: <sessionId>
 
 3. 如果结果为 `submitted`，用其问题和答案继续原来的工作流。
 4. 如果还需要更多独立问题，优先回到前台 `ask` 命令，使用相同的 `sessionId` 并将 `basedOnRound` 设为已处理的轮次。仅在直连等待仍不可用时再次使用 `create`。
-5. 不再需要更多问题时，运行：
+5. 🔴 **结束会话前**：确认不再有后续独立问题。确认后运行：
 
    ```text
    node <ASK_UI_SKILL_DIR>/scripts/ask-ui.mjs complete --session <sessionId>
