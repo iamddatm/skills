@@ -561,6 +561,16 @@ async function loadBundle(force = false) {
   if (changed) render();
 }
 
+// 表单未提交时关闭页面弹出确认，防止 Agent 挂起
+window.addEventListener('beforeunload', (event) => {
+  if (!bundle) return;
+  const round = currentRound();
+  const editable = round?.status === 'waiting_for_user' && bundle.session.status === 'active';
+  if (editable) {
+    event.preventDefault();
+  }
+});
+
 if (!sessionId || !token) {
   renderError(new Error('页面链接缺少 Session 或访问令牌。请使用 Agent 返回的完整链接。'));
 } else {
