@@ -4,6 +4,8 @@
 
 Use UTF-8 JSON. Fields not listed here are ignored unless otherwise stated.
 
+**ID 约束**：所有 `id` 字段（`sessionId`、`question.id`、`option.id`）必须为 3-128 个安全字符（以字母或数字开头，仅含字母、数字、`.`、`_`、`-`）。
+
 ```json
 {
   "schemaVersion": "1.0",
