@@ -111,11 +111,8 @@ async function ensureDataRoot(requested, cwd = process.cwd()) {
     return resolved;
   }
 
-  // 默认使用状态目录，避免在用户工作目录下产生 .ask-ui/ 文件夹
-  const stateBase = process.platform === 'win32'
-    ? process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local')
-    : process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
-  const primary = path.join(stateBase, 'ask-ui');
+  // 默认使用临时目录，session 数据随系统清理自动回收
+  const primary = path.join(os.tmpdir(), 'ask-ui');
 
   try {
     await fs.mkdir(primary, { recursive: true });
@@ -613,7 +610,7 @@ function addSecurityHeaders(response) {
   response.setHeader('Referrer-Policy', 'no-referrer');
   response.setHeader(
     'Content-Security-Policy',
-    "default-src 'self'; script-src 'self' https://cdn.bootcdn.net 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'",
   );
 }
 

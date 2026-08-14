@@ -139,7 +139,7 @@ ask-ui-session: <sessionId>
 | 覆盖已提交的 `answers.json` | 用户提交后需要修改 | 新建 Round 放修正，已提交文件不可变 |
 | 为已完成的 Session 追加 Round | Session 状态为 `completed` | 创建新 Session |
 | 能 `ask` 却用 `create` 逃避等待 | 不想阻塞工具调用 | 优先 `ask`；仅在前台等待不可用时才 `create` |
-| 在 CI / 无头环境不设 `--data-dir` | 自动化流水线 | 显式指定 `--data-dir`，避免数据散落在工作目录 |
+| 在 CI / 无头环境不设 `--data-dir` | 自动化流水线 | 显式指定 `--data-dir`，默认临时目录可能在 CI 重启后丢失 |
 
 ## 可选的主动唤醒
 
