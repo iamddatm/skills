@@ -100,18 +100,22 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
     {
       "questionId": "q1",
       "selectedOptionIds": ["dashboard"],
-      "customText": ""
+      "customText": "",
+      "notes": "仪表盘需要支持自定义布局。"
     },
     {
       "questionId": "q3",
       "selectedOptionIds": [],
-      "customText": "每天使用至少两次。"
+      "customText": "每天使用至少两次。",
+      "notes": ""
     }
   ]
 }
 ```
 
 `answers.json` becomes immutable after submission. Create a later Round for corrections.
+
+**`notes` 字段**：每个 answer 可携带可选的 `notes` 字符串（最大 2000 字符），用于用户对单个问题的补充说明、修正或对选项的质疑。该字段不参与校验，不影响 required / 选项目数约束。旧数据缺少此字段时按空字符串处理。
 
 ### Other option
 

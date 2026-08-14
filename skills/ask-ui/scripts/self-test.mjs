@@ -200,10 +200,10 @@ try {
   assert.equal(rejectedOtherResponse.status, 422);
 
   const answers = [
-    { questionId: 'scope', selectedOptionIds: ['personal'], customText: '' },
-    { questionId: 'modules', selectedOptionIds: ['tasks', 'notes'], customText: '' },
-    { questionId: 'context', selectedOptionIds: [], customText: '先做本地 Demo。' },
-    { questionId: 'channel', selectedOptionIds: ['__other__'], customText: '桌面通知' },
+    { questionId: 'scope', selectedOptionIds: ['personal'], customText: '', notes: '个人工作台优先，团队版后续迭代。' },
+    { questionId: 'modules', selectedOptionIds: ['tasks', 'notes'], customText: '', notes: '' },
+    { questionId: 'context', selectedOptionIds: [], customText: '先做本地 Demo。', notes: '' },
+    { questionId: 'channel', selectedOptionIds: ['__other__'], customText: '桌面通知', notes: '' },
   ];
   const draftResponse = await fetch(
     `${base}/api/sessions/${first.sessionId}/rounds/1/draft`,
@@ -225,6 +225,11 @@ try {
   const resumed = await resumeRound(dataRoot, first.sessionId);
   assert.equal(resumed.status, 'submitted');
   assert.equal(resumed.roundNumber, 1);
+  // 验证 notes 字段持久化
+  const scopeAnswer = resumed.answers.answers.find((a) => a.questionId === 'scope');
+  assert.equal(scopeAnswer.notes, '个人工作台优先，团队版后续迭代。');
+  const modulesAnswer = resumed.answers.answers.find((a) => a.questionId === 'modules');
+  assert.equal(modulesAnswer.notes, '');
 
   await createRound({
     sessionId: first.sessionId,

@@ -395,10 +395,12 @@ function normalizeAnswer(answer, question) {
     ? [...new Set(answer.selectedOptionIds.map(String))]
     : [];
   const customText = String(answer?.customText || '');
+  const notes = String(answer?.notes || '');
   return {
     questionId: question.id,
     selectedOptionIds: selected,
     customText,
+    notes,
   };
 }
 
@@ -407,8 +409,12 @@ function validateAnswers(questionSet, rawAnswers, { partial = false } = {}) {
     (Array.isArray(rawAnswers) ? rawAnswers : []).map((answer) => [String(answer.questionId), answer]),
   );
   const errors = [];
+  const NOTES_MAX_LENGTH = 2000;
   const answers = questionSet.questions.map((question) => {
     const answer = normalizeAnswer(answerMap.get(question.id), question);
+    if (answer.notes.length > NOTES_MAX_LENGTH) {
+      errors.push(`${question.title} notes exceed ${NOTES_MAX_LENGTH} characters`);
+    }
     if (question.type === 'text') {
       if (!partial && question.required && !answer.customText.trim()) {
         errors.push(`${question.title} is required`);

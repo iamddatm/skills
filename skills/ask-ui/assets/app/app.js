@@ -67,12 +67,14 @@ function defaultAnswer(question) {
       questionId: question.id,
       selectedOptionIds: [],
       customText: question.recommendedDraft || '',
+      notes: '',
     };
   }
   return {
     questionId: question.id,
     selectedOptionIds: [...(question.recommendedOptionIds || [])],
     customText: '',
+    notes: '',
   };
 }
 
@@ -80,6 +82,7 @@ function normalizeLegacyOther(answer, question) {
   const normalized = structuredClone(answer);
   normalized.selectedOptionIds ||= [];
   normalized.customText ||= '';
+  normalized.notes ||= '';
   if (
     question.type !== 'text'
     && question.allowOther
@@ -105,7 +108,7 @@ function answersForRound(round) {
 function answerFor(questionId) {
   let answer = draftAnswers.find((item) => item.questionId === questionId);
   if (!answer) {
-    answer = { questionId, selectedOptionIds: [], customText: '' };
+    answer = { questionId, selectedOptionIds: [], customText: '', notes: '' };
     draftAnswers.push(answer);
   }
   return answer;
@@ -370,14 +373,44 @@ function renderQuestion(question, index, editable, submittedAnswers) {
   if (editable) {
     if (question.type === 'text') renderTextQuestion(body, question, answer, true);
     else renderChoiceQuestion(body, question, answer, true);
+    renderNotesInput(body, question, answer);
   } else {
     body.append(element('div', 'history-answer', displayAnswer(question, answer)));
+    renderNotesReadonly(body, answer);
   }
   if (recommendedText(question)) {
     body.append(element('p', 'recommendation', recommendedText(question)));
   }
   card.append(number, body);
   return card;
+}
+
+function renderNotesInput(container, question, answer) {
+  const wrapper = element('div', 'notes-wrapper');
+  const label = element('label', 'notes-label', '补充说明');
+  label.setAttribute('for', `notes-${question.id}`);
+  const textarea = document.createElement('textarea');
+  textarea.className = 'notes-input';
+  textarea.id = `notes-${question.id}`;
+  textarea.rows = 2;
+  textarea.maxLength = 2000;
+  textarea.placeholder = '对这个问题有补充或修正？（选填）';
+  textarea.value = answer.notes || '';
+  textarea.addEventListener('input', () => {
+    answer.notes = textarea.value;
+    scheduleDraftSave();
+  });
+  wrapper.append(label, textarea);
+  container.append(wrapper);
+}
+
+function renderNotesReadonly(container, answer) {
+  const notes = (answer?.notes || '').trim();
+  if (!notes) return;
+  const wrapper = element('div', 'notes-readonly');
+  wrapper.append(element('span', 'notes-label', '补充说明：'));
+  wrapper.append(element('span', 'notes-text', notes));
+  container.append(wrapper);
 }
 
 function clientValidation(round) {
