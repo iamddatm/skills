@@ -68,7 +68,7 @@ domain-modeling's in-session behaviours — challenging term conflicts, sharpeni
 4. Parse the AnswerSet: settle decisions into the design tree and challenge conflicting answers on the spot.
 5. Update `CONTEXT.md`; offer ADRs where the three criteria hold.
 6. Recompute the frontier: if non-empty, return to step 1 with the same `sessionId`; if empty, continue.
-7. Present the design-tree summary and ask the user to confirm a shared understanding, per grilling. If the user raises new doubts, keep the session open and ask another round. Only after the user confirms, run ask-ui's `complete` — then act.
+7. 🔴 CHECKPOINT — Present the design-tree summary and ask the user to confirm a shared understanding, per grilling. If the user raises new doubts, keep the session open and ask another round. Only after the user confirms, run ask-ui's `complete` — then act.
 
 ## Fallback
 
