@@ -32,7 +32,7 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
 
 ```json
 {
-  "id": "q1",
+  "id": "home-layout",
   "type": "single",
   "title": "首页结构",
   "description": "选择一种主要组织方式。",
@@ -54,7 +54,7 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
 
 ```json
 {
-  "id": "q2",
+  "id": "first-modules",
   "type": "multiple",
   "title": "首期模块",
   "description": "选择首期必须具备的模块。",
@@ -75,7 +75,7 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
 
 ```json
 {
-  "id": "q3",
+  "id": "success-criteria",
   "type": "text",
   "title": "成功标准",
   "description": "描述上线后的成功标准。",
@@ -98,13 +98,13 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
   "submittedAt": "2026-08-10T15:30:00.000Z",
   "answers": [
     {
-      "questionId": "q1",
+      "questionId": "home-layout",
       "selectedOptionIds": ["dashboard"],
       "customText": "",
       "notes": "仪表盘需要支持自定义布局。"
     },
     {
-      "questionId": "q3",
+      "questionId": "success-criteria",
       "selectedOptionIds": [],
       "customText": "每天使用至少两次。",
       "notes": ""
