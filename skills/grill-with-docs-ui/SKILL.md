@@ -78,7 +78,6 @@ domain-modeling's in-session behaviours — challenging term conflicts, sharpeni
 | ask-ui rejects the QuestionSet (an id or field fails validation) | Fix the offending field per ask-ui's `references/schema.md` — most often an id shorter than 3 characters or containing unsafe characters — and resubmit the same round; sessionId and round number stay unchanged. |
 | A round falls back to detached `create` mode | Before switching, follow ask-ui's 🔴 rule and confirm the user understands the detached flow. Recover per ask-ui's resume path (its submission trigger phrases); prefer returning to foreground `ask` for later rounds. Run `complete` only after confirming no further rounds remain. |
 | The user asks to switch to text mid-session | Switch to plain-text grilling; submitted rounds and written docs are kept. |
-| A round has a single independent question | Ask it in the conversation; the answer enters the design tree and docs as usual. |
 
 ## Never
 
