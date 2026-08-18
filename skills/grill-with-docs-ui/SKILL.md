@@ -34,7 +34,8 @@ If grilling or domain-modeling is missing, do not start this session. If ask-ui 
 
 Additional rules:
 
-- Question ids are numbered sequentially across the whole session (`q1`, `q2`, `q3` in round 1; round 2 continues `q4`, `q5`, …) so ids never collide between rounds.
+- Question ids are numbered sequentially across the whole session, zero-padded to at least 3 characters (`q001`, `q002`, `q003` in round 1; round 2 continues `q004`, `q005`, …) so ids never collide between rounds.
+- Every id (question and option) must satisfy ask-ui's constraint: 3-128 safe characters — start with a letter or digit, then only letters, digits, `.`, `_`, `-`. Short ids like `q1` are rejected.
 - Question title → `title`; question body and context → `description`; the reason behind the recommendation → `recommendationReason`.
 - Decision questions set `allowOther: true` — the user may answer outside the offered options (returned as the reserved id `__other__` plus `customText`).
 - Decision questions set `required: true`; a text question is `required: false` only when it is genuinely optional.
@@ -74,6 +75,7 @@ domain-modeling's in-session behaviours — challenging term conflicts, sharpeni
 | Situation | Handling |
 |---|---|
 | ask-ui cannot start (no node, bad JSON, no browser, …) | Work through ask-ui's troubleshooting table; final fallback is grilling's plain-text question format. The session and doc-writing continue unbroken. |
+| ask-ui rejects the QuestionSet (an id or field fails validation) | Fix the offending field per ask-ui's `references/schema.md` — most often an id shorter than 3 characters or containing unsafe characters — and resubmit the same round; sessionId and round number stay unchanged. |
 | A round falls back to detached `create` mode | Before switching, follow ask-ui's 🔴 rule and confirm the user understands the detached flow. Recover per ask-ui's resume path (its submission trigger phrases); prefer returning to foreground `ask` for later rounds. Run `complete` only after confirming no further rounds remain. |
 | The user asks to switch to text mid-session | Switch to plain-text grilling; submitted rounds and written docs are kept. |
 | A round has a single independent question | Ask it in the conversation; the answer enters the design tree and docs as usual. |
@@ -85,4 +87,5 @@ domain-modeling's in-session behaviours — challenging term conflicts, sharpeni
 - Batch `CONTEXT.md` / ADR updates to the end of the session.
 - Overwrite submitted answers or amend them in an old round — corrections go in a new round.
 - Reuse a `sessionId` across different grilling sessions.
+- Use ids shorter than 3 characters or with unsafe characters (e.g. `q1`, `my question`) — ask-ui rejects the whole QuestionSet.
 - Run `complete` before the user confirms a shared understanding — a completed session cannot take new rounds.
