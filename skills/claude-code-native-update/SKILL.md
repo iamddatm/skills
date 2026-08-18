@@ -24,18 +24,69 @@ description: 'Windows 受限网络环境下安装、更新或迁移 Claude Code 
 | Manifest | `.../claude-code-releases/<ver>/manifest.json` → `platforms."win32-x64"` 含 `checksum`（SHA256）与 `size` |
 | 二进制 URL | `.../claude-code-releases/<ver>/win32-x64/claude.exe` |
 | 体检命令 | `claude doctor`（期望 "No installation issues found"） |
-| 本地代理 | 以用户实际环境为准（Clash/Mihomo 混合端口常见为 `http://127.0.0.1:7890`；也可查 `$env:HTTPS_PROXY` / `$env:HTTP_PROXY`） |
+| 本地代理 | 按优先级自动检测（见第 0 步）：环境变量 `$env:HTTPS_PROXY` / `$env:HTTP_PROXY` → Windows 系统代理注册表 → 常见本地端口（7890/10809/1080）→ 全部失败才询问用户 |
 
 所有网络请求都必须带 `-Proxy $proxy`。
 
 ## 更新原生版（常用流程）
 
-**第 0 步：确认代理地址**——先问清用户的本地代理地址（Clash/Mihomo 常见默认 `http://127.0.0.1:7890`；用户不确定时查代理客户端设置或 `$env:HTTPS_PROXY`），下文赋给 `$proxy`。
+**第 0 步：检测并验证代理地址**——按三级优先级自动检测，每级都用小请求验证连通性，全部失败才询问用户。
+
+**第一级：环境变量**
+
+```powershell
+$candidates = @()
+foreach ($k in @('HTTPS_PROXY','HTTP_PROXY','https_proxy','http_proxy')) {
+    $v = [Environment]::GetEnvironmentVariable($k)
+    if ($v) { $candidates += $v; break }
+}
+```
+
+**第二级：Windows 系统代理（IE/Edge 设置）**
+
+```powershell
+$inet = Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings'
+if ($inet.ProxyEnable -eq 1 -and $inet.ProxyServer) {
+    $sys = $inet.ProxyServer
+    # ProxyServer 可能是 "host:port" 或 "http=host:port;https=host:port;..."
+    if ($sys -match '=') { $sys = ($sys -split ';' | Where-Object { $_ -match '^https?=' } | Select-Object -First 1) -replace '^\w+=' }
+    if ($sys -notmatch '^https?://') { $sys = "http://$sys" }
+    $candidates += $sys
+}
+```
+
+**第三级：常见本地代理端口**
+
+```powershell
+foreach ($port in @(7890, 10809, 1080)) {
+    $addr = "http://127.0.0.1:$port"
+    if ((Test-NetConnection 127.0.0.1 -Port $port -WarningAction SilentlyContinue).TcpTestSucceeded) {
+        $candidates += $addr
+    }
+}
+```
+
+**验证连通性**——对每个候选执行小请求，第一个成功即用：
+
+```powershell
+$proxy = $null
+$candidates = $candidates | Select-Object -Unique
+foreach ($c in $candidates) {
+    try {
+        $null = Invoke-RestMethod 'https://downloads.claude.ai/claude-code-releases/latest' -Proxy $c -TimeoutSec 15
+        $proxy = $c
+        Write-Output "代理可用: $proxy"
+        break
+    } catch { /* 下一个 */ }
+}
+```
+
+**全部失败才询问用户**——用 `AskUserQuestion` 提供常见默认值（Clash `http://127.0.0.1:7890`、V2Ray `http://127.0.0.1:10809`），获取后用同一方式验证。下文赋给 `$proxy`。
 
 **前半段（会话内可做）**——下载并校验：
 
 ```powershell
-$proxy = 'http://127.0.0.1:7890'   # 换成用户实际代理地址
+# $proxy 由第 0 步自动检测或用户指定
 $ver  = Invoke-RestMethod 'https://downloads.claude.ai/claude-code-releases/latest' -Proxy $proxy
 $man  = Invoke-RestMethod "https://downloads.claude.ai/claude-code-releases/$ver/manifest.json" -Proxy $proxy
 $sum  = $man.platforms.'win32-x64'.checksum
@@ -113,3 +164,4 @@ Invoke-WebRequest "https://downloads.claude.ai/claude-code-releases/$ver/win32-x
 | 留着自动更新等它自己好 | 受限网络下必然失败、提示常驻；`settings.json` 的 `env` 加 `DISABLE_AUTOUPDATER=1` 关掉，走手动流程 |
 | 全新安装也照更新流程生成交棒脚本等用户执行 | 全新安装目标位置无文件锁，会话内直接部署即可；盲目交棒徒增用户操作 |
 | 为写 `installMethod` 整文件覆盖 `.claude.json` | 该文件含登录态与用户配置，必须保留原内容只改这一个键 |
+| 跳过代理自动检测直接问用户 | 系统通常已配好代理（环境变量/系统设置/本地端口），直接问多一轮无意义交互；按第 0 步三级检测，全部失败再问 |
