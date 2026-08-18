@@ -5,6 +5,9 @@
 CLAUDE.md
 test-prompts.json
 
+# 项目级 skill 调试 junction（指向本仓库 skills/，仅本地生效）
+.claude/
+
 # 操作系统生成的杂项文件
 Thumbs.db
 desktop.ini
