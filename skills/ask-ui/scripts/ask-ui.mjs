@@ -868,6 +868,46 @@ async function ensureServer(dataRoot) {
   throw new Error('Ask UI server did not start');
 }
 
+async function waitUntilServerDead(info, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!(await serverIsAlive(info))) return true;
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  }
+  return !(await serverIsAlive(info));
+}
+
+export async function stopServer(dataRoot) {
+  const serverFile = path.join(dataRoot, 'server.json');
+  const info = await readJson(serverFile, null);
+  if (!info) return { stopped: false, reason: 'no-server-info' };
+  if (!(await serverIsAlive(info))) {
+    // 服务器已不在运行，只清理残留的描述文件。
+    await fs.rm(serverFile, { force: true });
+    return { stopped: false, reason: 'not-running' };
+  }
+  if (!info.pid) throw new Error('server.json is missing pid field');
+
+  // Windows 上 SIGTERM 即强制终止进程；POSIX 上分离的 serve 进程也能正常收到信号。
+  try {
+    process.kill(info.pid, 'SIGTERM');
+  } catch {
+    // 进程可能在探活与终止之间自行退出，继续走轮询分支确认结果。
+  }
+  if (!(await waitUntilServerDead(info, 5000))) {
+    try {
+      process.kill(info.pid, 'SIGKILL');
+    } catch {
+      // 同上：忽略进程已退出导致的错误。
+    }
+    if (!(await waitUntilServerDead(info, 3000))) {
+      throw new Error(`Ask UI server (pid ${info.pid}) could not be stopped`);
+    }
+  }
+  await fs.rm(serverFile, { force: true });
+  return { stopped: true, pid: info.pid };
+}
+
 function openBrowser(url) {
   let child;
   if (process.platform === 'win32') {
@@ -901,6 +941,7 @@ function help() {
   process.stdout.write(`  ask --input <file> [--data-dir <dir>] [--port <number>] [--no-open]\n`);
   process.stdout.write(`  create --input <file> [--data-dir <dir>] [--no-open] [--no-serve]\n`);
   process.stdout.write(`  serve [--data-dir <dir>] [--port <number>] [--token <token>]\n`);
+  process.stdout.write(`  stop [--data-dir <dir>]\n`);
   process.stdout.write(`  resume [--session <id>] [--data-dir <dir>]\n`);
   process.stdout.write(`  status --session <id> [--data-dir <dir>]\n`);
   process.stdout.write(`  complete --session <id> [--data-dir <dir>]\n`);
@@ -993,6 +1034,11 @@ export async function main(argv = process.argv.slice(2)) {
     });
     print(started.info);
     return new Promise(() => {});
+  }
+
+  if (command === 'stop') {
+    print(await stopServer(dataRoot));
+    return;
   }
 
   if (command === 'resume') {

@@ -13,6 +13,7 @@ import {
   loadSessionBundle,
   resumeRound,
   startHttpServer,
+  stopServer,
 } from './ask-ui.mjs';
 
 const ASK_UI_SCRIPT = fileURLToPath(new URL('./ask-ui.mjs', import.meta.url));
@@ -329,6 +330,67 @@ try {
   assert.equal(directBundle.rounds[0].deliveryMode, 'direct');
   assert.equal(directBundle.rounds[1].status, 'submitted');
   assert.equal(directBundle.session.wakeState, undefined);
+
+  // 验证 stop 命令：终止分离 serve 进程并清理 server.json
+  const stopDataRoot = path.join(temporaryRoot, 'stop-data');
+  const serveChild = spawn(
+    process.execPath,
+    [ASK_UI_SCRIPT, 'serve', '--data-dir', stopDataRoot, '--port', '0'],
+    { detached: true, stdio: 'ignore', windowsHide: true },
+  );
+  serveChild.unref();
+  const stopServerFile = path.join(stopDataRoot, 'server.json');
+  const serverFileExists = () => fs.access(stopServerFile).then(() => true, () => false);
+  try {
+    let serveInfo = null;
+    const serveDeadline = Date.now() + 8000;
+    while (Date.now() < serveDeadline) {
+      serveInfo = JSON.parse(await fs.readFile(stopServerFile, 'utf8').catch(() => 'null'));
+      if (serveInfo?.port && serveInfo?.token) break;
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+    assert.ok(serveInfo?.port, 'detached serve did not write server.json in time');
+    const healthUrl = `http://127.0.0.1:${serveInfo.port}/health?token=${encodeURIComponent(serveInfo.token)}`;
+    assert.equal((await fetch(healthUrl)).status, 200);
+
+    const stopResult = await stopServer(stopDataRoot);
+    assert.equal(stopResult.stopped, true);
+    assert.equal(stopResult.pid, serveInfo.pid);
+    let aliveAfterStop = true;
+    try {
+      await fetch(healthUrl);
+    } catch {
+      aliveAfterStop = false;
+    }
+    assert.equal(aliveAfterStop, false, 'server still responds after stop');
+    assert.equal(await serverFileExists(), false, 'server.json should be removed after stop');
+
+    // 重复 stop：server.json 已被清理，应报告 no-server-info
+    const repeatStop = await stopServer(stopDataRoot);
+    assert.equal(repeatStop.stopped, false);
+    assert.equal(repeatStop.reason, 'no-server-info');
+
+    // stale server.json（端口已死）：不应触发终止动作，只清理描述文件
+    await fs.writeFile(stopServerFile, JSON.stringify({
+      pid: 2147483647,
+      host: '127.0.0.1',
+      port: 1,
+      token: 'stale-token',
+      dataRoot: stopDataRoot,
+      startedAt: '2026-01-01T00:00:00.000Z',
+    }), 'utf8');
+    const staleStop = await stopServer(stopDataRoot);
+    assert.equal(staleStop.stopped, false);
+    assert.equal(staleStop.reason, 'not-running');
+    assert.equal(await serverFileExists(), false, 'stale server.json should be removed');
+  } finally {
+    // 断言失败时兜底，避免分离测试进程泄漏
+    try {
+      process.kill(serveChild.pid);
+    } catch {
+      // 进程已被 stopServer 终止，忽略错误。
+    }
+  }
   process.stdout.write('ask-ui self-test passed\n');
 } finally {
   if (server) await new Promise((resolve) => server.close(resolve));

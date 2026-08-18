@@ -130,6 +130,12 @@ ask-ui-session: <sessionId>
    node <ASK_UI_SKILL_DIR>/scripts/ask-ui.mjs complete --session <sessionId>
    ```
 
+6. 🔴 **运行 `stop` 前**：确认该数据目录没有其他进行中的 Ask UI 会话（本次对话没有创建过其他未完成会话）；无法确认时跳过本步，残留进程不影响已提交的数据。确认后运行（使用自定义数据目录时追加 `--data-dir`）：
+
+   ```text
+   node <ASK_UI_SKILL_DIR>/scripts/ask-ui.mjs stop
+   ```
+
 如果对话标记不可用，不带 `--session` 运行 `resume`。返回多个候选时，根据当前主题、工作区、标题和提交时间推断最佳匹配。仅在确实无法判断时才询问用户。
 
 重复的"已提交"消息不得创建重复轮次。只有在成功读取一个 `submitted` 状态的轮次后，才能创建新一轮。
@@ -154,6 +160,7 @@ ask-ui-session: <sessionId>
 | 端口被占用 | 用 `--port <number>` 指定可用端口 | 改用 `create` 分离模式 |
 | CI / 无头环境无浏览器 | 使用 `create` 分离模式 + 显式 `--data-dir` | 回退到纯文本格式 |
 | `ask` 进程长时间无响应 | 终止进程，用 `complete` 清理脏 Session，重新启动 | 改用 `create` 分离模式 |
+| `stop` 报错无法终止服务器 | 重跑 `stop`，核对 stderr 错误信息中的 pid | 按 pid 手动终止进程；会话已完成，如实告知用户即可，不阻塞主流程 |
 
 ## 反例与禁止操作
 
@@ -165,6 +172,7 @@ ask-ui-session: <sessionId>
 | 在 CI / 无头环境不设 `--data-dir` | 自动化流水线 | 显式指定 `--data-dir`，默认临时目录可能在 CI 重启后丢失 |
 | 多个任务混用同一个 `sessionId` | 并行处理多个独立任务 | 一个任务对应一个 session，不同任务用不同 `sessionId` |
 | `ask` 阻塞期间发起新的 `ask` / `create` | 当前轮次尚未提交 | 等当前轮次提交返回后再操作下一轮 |
+| 分离模式会话结束后放任服务器残留 | 分离会话已 `complete` | 确认同一数据目录无进行中会话后运行 `stop` 清理（`complete` 不终止进程） |
 
 ## 可选的主动唤醒
 
@@ -183,6 +191,7 @@ node <ASK_UI_SKILL_DIR>/scripts/ask-ui.mjs ask --input <questions.json>
 node <ASK_UI_SKILL_DIR>/scripts/ask-ui.mjs create --input <questions.json>
 node <ASK_UI_SKILL_DIR>/scripts/ask-ui.mjs status --session <sessionId>
 node <ASK_UI_SKILL_DIR>/scripts/ask-ui.mjs serve
+node <ASK_UI_SKILL_DIR>/scripts/ask-ui.mjs stop
 node <ASK_UI_SKILL_DIR>/scripts/ask-ui.mjs complete --session <sessionId>
 node <ASK_UI_SKILL_DIR>/scripts/self-test.mjs
 ```
