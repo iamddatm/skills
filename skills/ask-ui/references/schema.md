@@ -32,7 +32,7 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
 
 ```json
 {
-  "id": "home-layout",
+  "id": "q001",
   "type": "single",
   "title": "首页结构",
   "description": "选择一种主要组织方式。",
@@ -54,7 +54,7 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
 
 ```json
 {
-  "id": "first-modules",
+  "id": "q002",
   "type": "multiple",
   "title": "首期模块",
   "description": "选择首期必须具备的模块。",
@@ -75,7 +75,7 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
 
 ```json
 {
-  "id": "success-criteria",
+  "id": "q003",
   "type": "text",
   "title": "成功标准",
   "description": "描述上线后的成功标准。",
@@ -98,13 +98,13 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
   "submittedAt": "2026-08-10T15:30:00.000Z",
   "answers": [
     {
-      "questionId": "home-layout",
+      "questionId": "q001",
       "selectedOptionIds": ["dashboard"],
       "customText": "",
       "notes": "仪表盘需要支持自定义布局。"
     },
     {
-      "questionId": "success-criteria",
+      "questionId": "q003",
       "selectedOptionIds": [],
       "customText": "每天使用至少两次。",
       "notes": ""
@@ -124,7 +124,7 @@ with the reserved id `__other__`. Supplementary text remains in `customText`:
 
 ```json
 {
-  "questionId": "channel",
+  "questionId": "q002",
   "selectedOptionIds": ["__other__"],
   "customText": "桌面通知"
 }
