@@ -16,13 +16,13 @@ If grilling or domain-modeling is missing, do not start this session. If ask-ui 
 
 - The current frontier contains at least two independent decision questions the user can answer now → form.
 - A round has only one independent question → ask it directly in the conversation.
-- Fact-finding questions never go into the form: per grilling, dispatch a sub-agent to look up anything you can find out yourself; never ask the user for facts.
+- Fact-finding questions never go into the form — looking them up is your job, per grilling.
 
 ## Sessions and rounds
 
 - One grilling session = one ask-ui Session: reuse the same `sessionId` throughout.
 - One frontier round = one ask-ui Round: each follow-up round sets `basedOnRound` to the last processed round number.
-- Submitted answers are immutable; corrections and confirmations go into a new round.
+- Submitted answers are immutable; corrections go into a new round, per ask-ui.
 
 ## Question mapping (grilling → QuestionSet)
 
@@ -35,7 +35,7 @@ If grilling or domain-modeling is missing, do not start this session. If ask-ui 
 Additional rules:
 
 - Question ids are numbered sequentially across the whole session, zero-padded to at least 3 characters (`q001`, `q002`, `q003` in round 1; round 2 continues `q004`, `q005`, …) so ids never collide between rounds.
-- Every id (question and option) must satisfy ask-ui's constraint: 3-128 safe characters — start with a letter or digit, then only letters, digits, `.`, `_`, `-`. Short ids like `q1` are rejected.
+- Every id (question and option) must satisfy ask-ui's 3-128 safe-character constraint (see schema.md); short ids like `q1` are rejected.
 - Question title → `title`; question body and context → `description`; the reason behind the recommendation → `recommendationReason`.
 - Decision questions set `allowOther: true` — the user may answer outside the offered options (returned as the reserved id `__other__` plus `customText`).
 - Decision questions set `required: true`; a text question is `required: false` only when it is genuinely optional.
@@ -45,20 +45,19 @@ Additional rules:
 ## Answer parsing (AnswerSet → design tree)
 
 - `selectedOptionIds` → the decision is settled; the frontier advances and unblocks downstream questions.
-- `selectedOptionIds` contains `__other__`, or a choice answer carries non-empty `customText` without `__other__` (older answer format) → `customText` is the user's answer.
-- For `text` questions, `customText` is the answer itself.
-- `notes` → the user's correction or objection on that question; when it conflicts with the selected options, `notes` wins. As submitted answers are immutable, carry the corrected reading into the design tree and put a confirmation question in the next round.
+- `__other__` / `customText` semantics follow schema.md; for `text` questions, `customText` is the answer.
+- `notes` conflicting with the selected options → `notes` wins: carry the corrected reading into the design tree and confirm it in the next round.
 - An answer that conflicts with existing glossary terms → challenge it immediately, per domain-modeling.
 
 ## Docs as you go
 
 Follow domain-modeling — never batch:
 
-- A term is resolved → update `CONTEXT.md` right away (glossary only, no implementation detail).
-- A settled decision that is hard to reverse, surprising without context, and the result of a real trade-off → offer an ADR in the conversation.
+- A term is resolved → update `CONTEXT.md` right away (glossary only, per domain-modeling).
+- A settled decision meeting domain-modeling's three ADR criteria → offer an ADR in the conversation.
 - Doc updates happen after each round's answers are parsed and before the next frontier is computed. In a multi-context repo (`CONTEXT-MAP.md` present), domain-modeling governs which `CONTEXT.md` / `docs/adr/` gets the update.
 
-domain-modeling's in-session behaviours — challenging term conflicts, sharpening fuzzy language, stress-testing with concrete scenarios, cross-referencing the code — happen in the conversation, exactly as in text-mode grill-with-docs; the form only replaces how frontier questions are asked.
+domain-modeling's in-session behaviours happen in the conversation exactly as in text mode; the form only replaces how frontier questions are asked.
 
 ## One round
 
@@ -75,16 +74,13 @@ domain-modeling's in-session behaviours — challenging term conflicts, sharpeni
 | Situation | Handling |
 |---|---|
 | ask-ui cannot start (no node, bad JSON, no browser, …) | Work through ask-ui's troubleshooting table; final fallback is grilling's plain-text question format. The session and doc-writing continue unbroken. |
-| ask-ui rejects the QuestionSet (an id or field fails validation) | Fix the offending field per ask-ui's `references/schema.md` — most often an id shorter than 3 characters or containing unsafe characters — and resubmit the same round; sessionId and round number stay unchanged. |
+| ask-ui rejects the QuestionSet (an id or field fails validation) | Fix the offending field per schema.md — most often a short or unsafe id — and resubmit the same round; sessionId and round number stay unchanged. |
 | A round falls back to detached `create` mode | Before switching, follow ask-ui's 🔴 rule and confirm the user understands the detached flow. Recover per ask-ui's resume path (its submission trigger phrases); prefer returning to foreground `ask` for later rounds. Run `complete` only after confirming no further rounds remain. |
 | The user asks to switch to text mid-session | Switch to plain-text grilling; submitted rounds and written docs are kept. |
 
 ## Never
 
 - Split one round's frontier across several chat messages — a round's questions go in one form round.
-- Put fact-finding questions in the form — dispatch a sub-agent; the form carries decisions only.
-- Batch `CONTEXT.md` / ADR updates to the end of the session.
-- Overwrite submitted answers or amend them in an old round — corrections go in a new round.
 - Reuse a `sessionId` across different grilling sessions.
 - Use ids shorter than 3 characters or with unsafe characters (e.g. `q1`, `my question`) — ask-ui rejects the whole QuestionSet.
 - Run `complete` before the user confirms a shared understanding — a completed session cannot take new rounds.
