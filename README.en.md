@@ -4,7 +4,7 @@
 
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/github/awesome-copilot)
 
-A collection of AI coding skills for Chinese-speaking developers — including translated adaptations of popular upstream skills and original skills — compatible with Claude Code, GitHub Copilot, Cursor, and other AI-powered development tools.
+A collection of AI coding skills for Chinese-speaking developers — including adaptations of popular upstream skills and original skills — compatible with Claude Code, GitHub Copilot, Cursor, and other AI-powered development tools.
 
 ---
 
@@ -14,7 +14,7 @@ A collection of AI coding skills for Chinese-speaking developers — including t
 |---|---|---|---|
 | [ask-ui](skills/ask-ui) | Render multiple independent questions from an Agent workflow as a local interactive form with preselected recommendations, auto-saved drafts, and per-question notes | Adapted | [ask-ui](https://github.com/Angus221/ak.skills_sample/tree/main/skills/ask-ui) |
 | [claude-code-native-update](skills/claude-code-native-update) | Install, update, or migrate to the native Claude Code on Windows in restricted network environments: manual download via local proxy + SHA256 verification + offline deployment | Original | — |
-| [dotnet-best-practices](skills/dotnet-best-practices) | Best-practice convention checks for .NET/C# code | Translated | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
+| [dotnet-best-practices](skills/dotnet-best-practices) | Best-practice convention checks for .NET/C# code | Adapted | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
 | [dotnet-production-debug](skills/dotnet-production-debug) | .NET production performance troubleshooting: CPU spikes, memory leaks/OOM, deadlocks/hangs, crashes, GC anomalies and dump analysis | Original | — |
 | [grill-with-docs-ui](skills/grill-with-docs-ui) | Form-mode grill-with-docs: grilling's frontier rounds are asked through an ask-ui local interactive form, producing ADRs and a glossary along the way; requires grilling, domain-modeling and ask-ui | Adapted | [grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
 | [wpf-stylet](skills/wpf-stylet) | WPF + Stylet MVVM framework guide: lifecycle, Conductor navigation, dialogs, command binding and dependency injection | Original | — |
@@ -72,11 +72,11 @@ For Cursor, rename `SKILL.md` to `.mdc` and place it under `.cursor/rules/`.
 
 Contributions are welcome! Two ways to contribute:
 
-### Translate an Upstream Skill
+### Adapt an Upstream Skill
 
 1. Fork this repo
 2. Create a skill folder under `skills/` using the original skill name
-3. Translate `SKILL.md` while preserving the original structure and code examples
+3. Adapt `SKILL.md` while preserving the original structure and code examples
 4. Link back to the original skill in the PR
 
 ### Create an Original Skill
@@ -94,8 +94,8 @@ Contributions are welcome! Two ways to contribute:
 ## Acknowledgements
 
 - Upstream skill authors and communities
-- All contributors who help translate and localize skills
+- All contributors who help adapt and localize skills
 
 ## License
 
-Each skill retains the license of its original source. Translations are provided under the same terms.
+Each skill retains the license of its original source. Adaptations are provided under the same terms.

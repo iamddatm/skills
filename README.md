@@ -4,7 +4,7 @@
 
 [![Awesome](https://awesome.re/badge.svg)](https://github.com/github/awesome-copilot)
 
-面向中文开发者的 AI 编程技能合集——包含上游热门技能的中文翻译与改编，以及原创技能——适用于 Claude Code、GitHub Copilot、Cursor 等各类 AI 编程助手。
+面向中文开发者的 AI 编程技能合集——包含上游热门技能的改编，以及原创技能——适用于 Claude Code、GitHub Copilot、Cursor 等各类 AI 编程助手。
 
 ---
 
@@ -14,7 +14,7 @@
 |---|---|---|---|
 | [ask-ui](skills/ask-ui) | 将 Agent 工作流中的多个独立问题渲染为本地交互式表单，支持预选推荐、草稿自动保存、每题补充说明 | 改编 | [ask-ui](https://github.com/Angus221/ak.skills_sample/tree/main/skills/ask-ui) |
 | [claude-code-native-update](skills/claude-code-native-update) | Windows 受限网络环境下安装、更新或迁移 Claude Code 原生版：本地代理手动下载 + SHA256 校验 + 离线部署 | 原创 | — |
-| [dotnet-best-practices](skills/dotnet-best-practices) | .NET/C# 代码最佳实践规范检查 | 翻译 | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
+| [dotnet-best-practices](skills/dotnet-best-practices) | .NET/C# 代码最佳实践规范检查 | 改编 | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
 | [dotnet-production-debug](skills/dotnet-production-debug) | .NET 生产环境性能故障排查：CPU 飙高、内存泄漏/OOM、死锁/卡死、崩溃、GC 异常与 dump 分析 | 原创 | — |
 | [grill-with-docs-ui](skills/grill-with-docs-ui) | 表单模式拷问：grilling 前沿轮次提问经 ask-ui 本地交互式表单进行，沿途产出 ADR 与术语表；依赖 grilling、domain-modeling、ask-ui | 改编 | [grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
 | [wpf-stylet](skills/wpf-stylet) | WPF + Stylet MVVM 框架开发指南：生命周期、Conductor 导航、弹窗、命令绑定与依赖注入 | 原创 | — |
@@ -72,11 +72,11 @@ Cursor 用户需将 `SKILL.md` 重命名为 `.mdc` 后放入 `.cursor/rules/` �
 
 欢迎贡献！两种方式：
 
-### 翻译上游技能
+### 改编上游技能
 
 1. 复刻本仓库
 2. 在 `skills/` 下使用上游技能原名创建文件夹
-3. 翻译 `SKILL.md`，保留原始结构和代码示例
+3. 改编 `SKILL.md`，保留原始结构和代码示例
 4. 在 PR 中链接回原始技能
 
 ### 创作原创技能
@@ -94,8 +94,8 @@ Cursor 用户需将 `SKILL.md` 重命名为 `.mdc` 后放入 `.cursor/rules/` �
 ## 致谢
 
 - 上游技能作者和社区
-- 所有参与翻译和本地化的贡献者
+- 所有参与改编和本地化的贡献者
 
 ## 许可证
 
-每项技能保留其原始来源的许可证，翻译版本遵循相同条款。
+每项技能保留其原始来源的许可证，改编版本遵循相同条款。
