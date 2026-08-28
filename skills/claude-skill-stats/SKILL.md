@@ -18,6 +18,7 @@ node scripts/skill-stats.mjs
 - 默认输出系统临时目录下的 `skill-stats.html`，可用 `--out <path>` 改（如 `--out D:/1vault/x/tools/skill-stats.html` 覆盖更新旧看板）。
 - 数据源默认 `~/.claude/projects`，可用 `--projects-dir <dir>` 改。
 - 脚本在 stdout 打印各渠道数量、合计、范围、输出路径——**直接把这些数字报告给用户**，不要自己再去解析日志。
+- 汇报固定结构：① 照读 stdout 的各渠道数量、合计、范围、输出路径；② 主动附上「报告时的口径说明」一节四条口径；③ 不对数字做任何自行估算或解读。
 - 全程只读取日志、只写一个 HTML 文件，无其他副作用；无需安装依赖（Node ≥ 20.12）。
 
 ## 跑失败时
