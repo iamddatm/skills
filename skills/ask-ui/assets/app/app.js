@@ -66,32 +66,14 @@ function defaultAnswer(question) {
     return {
       questionId: question.id,
       selectedOptionIds: [],
-      customText: question.recommendedDraft || '',
-      notes: '',
+      text: question.recommendedDraft || '',
     };
   }
   return {
     questionId: question.id,
     selectedOptionIds: [...(question.recommendedOptionIds || [])],
-    customText: '',
-    notes: '',
+    text: '',
   };
-}
-
-function normalizeLegacyOther(answer, question) {
-  const normalized = structuredClone(answer);
-  normalized.selectedOptionIds ||= [];
-  normalized.customText ||= '';
-  normalized.notes ||= '';
-  if (
-    question.type !== 'text'
-    && question.allowOther
-    && normalized.customText.trim()
-    && !normalized.selectedOptionIds.includes(OTHER_OPTION_ID)
-  ) {
-    normalized.selectedOptionIds.push(OTHER_OPTION_ID);
-  }
-  return normalized;
 }
 
 function answersForRound(round) {
@@ -99,16 +81,13 @@ function answersForRound(round) {
     || round.draft?.answers
     || round.questions.questions.map(defaultAnswer);
   const byId = new Map(source.map((answer) => [answer.questionId, answer]));
-  return round.questions.questions.map((question) => normalizeLegacyOther(
-    byId.get(question.id) || defaultAnswer(question),
-    question,
-  ));
+  return round.questions.questions.map((question) => byId.get(question.id) || defaultAnswer(question));
 }
 
 function answerFor(questionId) {
   let answer = draftAnswers.find((item) => item.questionId === questionId);
   if (!answer) {
-    answer = { questionId, selectedOptionIds: [], customText: '', notes: '' };
+    answer = { questionId, selectedOptionIds: [], text: '' };
     draftAnswers.push(answer);
   }
   return answer;
@@ -121,24 +100,19 @@ function optionLabel(question, optionId) {
 
 function displayAnswer(question, answer) {
   if (!answer) return '未填写';
+  const text = (answer.text || '').trim();
+  if (question.type === 'text') return text || '未填写';
   const selected = answer.selectedOptionIds || [];
-  const parts = selected.map((id) => {
-    if (id === OTHER_OPTION_ID) {
-      return answer.customText?.trim() ? `其他：${answer.customText.trim()}` : '其他';
-    }
-    return optionLabel(question, id);
-  });
-  if (answer.customText?.trim() && !selected.includes(OTHER_OPTION_ID)) {
-    parts.push(question.type === 'text' ? answer.customText.trim() : `其他：${answer.customText.trim()}`);
-  }
+  // 勾选“其他”时把自定义答案并入选项展示；未勾选时 text 是补充说明，另行展示
+  const parts = selected.map((id) => (
+    id === OTHER_OPTION_ID && text ? `其他：${text}` : optionLabel(question, id)
+  ));
   return parts.length ? parts.join('、') : '未填写';
 }
 
 function selectionCount(question, answer) {
-  if (question.type === 'text') return answer.customText.trim() ? 1 : 0;
-  const selected = answer.selectedOptionIds || [];
-  const legacyOther = answer.customText.trim() && !selected.includes(OTHER_OPTION_ID) ? 1 : 0;
-  return selected.length + legacyOther;
+  if (question.type === 'text') return answer.text.trim() ? 1 : 0;
+  return (answer.selectedOptionIds || []).length;
 }
 
 function answeredQuestionCount(round) {
@@ -237,7 +211,7 @@ function recommendedText(question) {
   return question.recommendationReason ? `推荐理由：${question.recommendationReason}` : '';
 }
 
-function renderChoiceQuestion(card, question, answer, editable) {
+function renderChoiceQuestion(card, question, answer, editable, sharedInput) {
   const list = element('div', 'option-list');
   for (const option of question.options) {
     const optionCard = element('label', 'option-card');
@@ -251,11 +225,10 @@ function renderChoiceQuestion(card, question, answer, editable) {
     input.addEventListener('change', () => {
       if (question.type === 'single') {
         answer.selectedOptionIds = [option.id];
-        answer.customText = '';
+        // 单选改选普通选项时取消“其他”，输入框内容保留，转为补充说明
         const otherSelector = list.querySelector(`input[value="${OTHER_OPTION_ID}"]`);
-        const otherText = list.querySelector('.other-input');
         if (otherSelector) otherSelector.checked = false;
-        if (otherText) otherText.value = '';
+        sharedInput?.refresh?.();
       } else if (input.checked) {
         answer.selectedOptionIds = [...new Set([...answer.selectedOptionIds, option.id])];
       } else {
@@ -278,8 +251,9 @@ function renderChoiceQuestion(card, question, answer, editable) {
   }
 
   if (question.allowOther) {
-    const otherCard = element('div', 'option-card option-other');
-    const heading = element('label', 'other-heading');
+    // “其他”只是一个普通选项卡片，不再有专属输入框；
+    // 勾选后由下方文本框承接具体答案（写入 text）
+    const otherCard = element('label', 'option-card');
     const selector = document.createElement('input');
     selector.className = 'option-selector';
     selector.type = question.type === 'single' ? 'radio' : 'checkbox';
@@ -287,48 +261,22 @@ function renderChoiceQuestion(card, question, answer, editable) {
     selector.value = OTHER_OPTION_ID;
     selector.checked = answer.selectedOptionIds.includes(OTHER_OPTION_ID);
     selector.disabled = !editable;
-    const content = element('span', 'option-content');
-    content.append(element('span', 'option-label', '其他'));
-    content.append(element('span', 'option-description', '可直接选择，也可以补充具体说明。'));
-    heading.append(selector, content);
-
-    const input = document.createElement('input');
-    input.className = 'other-input';
-    input.type = 'text';
-    input.placeholder = '请输入补充说明（选填）';
-    input.maxLength = 500;
-    input.value = answer.customText || '';
-    input.disabled = !editable;
-
-    const setOtherSelected = (selected) => {
-      if (selected) {
+    selector.addEventListener('change', () => {
+      if (selector.checked) {
         answer.selectedOptionIds = question.type === 'single'
           ? [OTHER_OPTION_ID]
           : [...new Set([...answer.selectedOptionIds, OTHER_OPTION_ID])];
       } else {
         answer.selectedOptionIds = answer.selectedOptionIds.filter((id) => id !== OTHER_OPTION_ID);
-        answer.customText = '';
-        input.value = '';
       }
-      selector.checked = selected;
-    };
-
-    selector.addEventListener('change', () => {
-      setOtherSelected(selector.checked);
+      // 勾选状态只改变输入框内容的解释（其他答案 / 补充说明），不搬动内容
+      sharedInput?.refresh?.();
       scheduleDraftSave();
     });
-    input.addEventListener('focus', () => {
-      if (!selector.checked) {
-        setOtherSelected(true);
-        scheduleDraftSave();
-      }
-    });
-    input.addEventListener('input', () => {
-      setOtherSelected(true);
-      answer.customText = input.value;
-      scheduleDraftSave();
-    });
-    otherCard.append(heading, input);
+    const content = element('span', 'option-content');
+    content.append(element('span', 'option-label', '其他'));
+    content.append(element('span', 'option-description', '可直接勾选，也可以在下方输入框填写你的答案。'));
+    otherCard.append(selector, content);
     list.append(otherCard);
   }
   card.append(list);
@@ -340,13 +288,13 @@ function renderTextQuestion(card, question, answer, editable) {
   input.className = 'text-input';
   if (input.tagName === 'TEXTAREA') input.rows = 3;
   input.maxLength = question.maxLength || 4000;
-  input.value = answer.customText || '';
+  input.value = answer.text || '';
   input.disabled = !editable;
   const updateCounter = () => {
     counter.textContent = `${input.value.length}/${input.maxLength}`;
   };
   input.addEventListener('input', () => {
-    answer.customText = input.value;
+    answer.text = input.value;
     updateCounter();
     scheduleDraftSave();
   });
@@ -371,12 +319,17 @@ function renderQuestion(question, index, editable, submittedAnswers) {
     ? answerFor(question.id)
     : submittedAnswers?.find((item) => item.questionId === question.id);
   if (editable) {
-    if (question.type === 'text') renderTextQuestion(body, question, answer, true);
-    else renderChoiceQuestion(body, question, answer, true);
-    renderNotesInput(body, question, answer);
+    if (question.type === 'text') {
+      renderTextQuestion(body, question, answer, true);
+    } else {
+      // 先渲染选项列表、再渲染文本框，勾选回调通过持有对象拿到刷新函数
+      const sharedInput = {};
+      renderChoiceQuestion(body, question, answer, true, sharedInput);
+      sharedInput.refresh = renderChoiceText(body, question, answer);
+    }
   } else {
     body.append(element('div', 'history-answer', displayAnswer(question, answer)));
-    renderNotesReadonly(body, answer);
+    renderCommentReadonly(body, question, answer);
   }
   if (recommendedText(question)) {
     body.append(element('p', 'recommendation', recommendedText(question)));
@@ -385,31 +338,45 @@ function renderQuestion(question, index, editable, submittedAnswers) {
   return card;
 }
 
-function renderNotesInput(container, question, answer) {
+// 选择题唯一的文本框：勾选“其他”时它是其他答案，未勾选时是补充说明，
+// 都写入同一个 text 字段，勾选切换只改变内容的解释
+function renderChoiceText(container, question, answer) {
   const wrapper = element('div', 'notes-wrapper');
-  const label = element('label', 'notes-label', '补充说明');
+  const label = element('label', 'notes-label');
   label.setAttribute('for', `notes-${question.id}`);
   const textarea = document.createElement('textarea');
   textarea.className = 'notes-input';
   textarea.id = `notes-${question.id}`;
   textarea.rows = 2;
   textarea.maxLength = 2000;
-  textarea.placeholder = '对这个问题有补充或修正？（选填）';
-  textarea.value = answer.notes || '';
+  textarea.value = answer.text || '';
+  const isOtherMode = () => answer.selectedOptionIds.includes(OTHER_OPTION_ID);
+  const refresh = () => {
+    const otherMode = isOtherMode();
+    label.textContent = otherMode ? '其他答案' : '补充说明';
+    textarea.placeholder = otherMode
+      ? '选项都不合适？在这里填写你的答案'
+      : '对这个问题有补充或修正？（选填）';
+  };
   textarea.addEventListener('input', () => {
-    answer.notes = textarea.value;
+    answer.text = textarea.value;
     scheduleDraftSave();
   });
+  refresh();
   wrapper.append(label, textarea);
   container.append(wrapper);
+  return refresh;
 }
 
-function renderNotesReadonly(container, answer) {
-  const notes = (answer?.notes || '').trim();
-  if (!notes) return;
+// 只读回显：选择题未勾“其他”时，text 是补充说明，单独展示
+function renderCommentReadonly(container, question, answer) {
+  if (question.type === 'text') return;
+  if ((answer?.selectedOptionIds || []).includes(OTHER_OPTION_ID)) return;
+  const text = (answer?.text || '').trim();
+  if (!text) return;
   const wrapper = element('div', 'notes-readonly');
   wrapper.append(element('span', 'notes-label', '补充说明：'));
-  wrapper.append(element('span', 'notes-text', notes));
+  wrapper.append(element('span', 'notes-text', text));
   container.append(wrapper);
 }
 

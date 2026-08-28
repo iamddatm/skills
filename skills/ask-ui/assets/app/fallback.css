@@ -394,37 +394,6 @@ textarea:focus-visible {
   line-height: 1.4;
 }
 
-.option-other {
-  grid-template-rows: auto auto;
-}
-
-.other-heading {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-}
-
-.other-heading .option-selector {
-  flex: 0 0 auto;
-}
-
-.other-input {
-  grid-column: 1 / -1;
-  width: 100%;
-  min-height: 34px;
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  padding: 7px 8px;
-  background: var(--surface);
-  color: var(--text);
-  font-size: 11px;
-  outline: none;
-}
-
-.option-other:not(:has(.option-selector:checked)) .other-input {
-  display: none;
-}
-
 .text-input {
   width: 100%;
   min-height: 74px;
@@ -439,7 +408,6 @@ textarea:focus-visible {
   resize: vertical;
 }
 
-.other-input:focus,
 .text-input:focus {
   border-color: var(--accent-border);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);

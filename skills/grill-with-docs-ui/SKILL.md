@@ -37,7 +37,7 @@ Additional rules:
 - Question ids are numbered sequentially across the whole session, zero-padded to at least 3 characters (`q001`, `q002`, `q003` in round 1; round 2 continues `q004`, `q005`, …) so ids never collide between rounds.
 - Every id (question and option) must satisfy ask-ui's 3-128 safe-character constraint (see schema.md); short ids like `q1` are rejected.
 - Question title → `title`; question body and context → `description`; the reason behind the recommendation → `recommendationReason`.
-- Decision questions set `allowOther: true` — the user may answer outside the offered options (returned as the reserved id `__other__` plus `customText`).
+- Decision questions set `allowOther: true` — the user may answer outside the offered options (returned as the reserved id `__other__` plus the answer in `text`).
 - Decision questions set `required: true`; a text question is `required: false` only when it is genuinely optional.
 - `sessionTitle` is the grilled subject; `title` is "Round N".
 - Read ask-ui's `references/schema.md` before composing the JSON; command usage, waiting behaviour and session continuity follow ask-ui.
@@ -45,8 +45,8 @@ Additional rules:
 ## Answer parsing (AnswerSet → design tree)
 
 - `selectedOptionIds` → the decision is settled; the frontier advances and unblocks downstream questions.
-- `__other__` / `customText` semantics follow schema.md; for `text` questions, `customText` is the answer.
-- `notes` conflicting with the selected options → `notes` wins: carry the corrected reading into the design tree and confirm it in the next round.
+- `__other__` / `text` semantics follow schema.md; for `text` questions, `text` is the answer.
+- Choice-question `text` without `__other__` is supplementary; when it conflicts with the selected options → `text` wins: carry the corrected reading into the design tree and confirm it in the next round.
 - An answer that conflicts with existing glossary terms → challenge it immediately, per domain-modeling.
 
 ## Docs as you go

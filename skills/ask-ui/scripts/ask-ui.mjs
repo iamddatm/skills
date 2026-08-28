@@ -391,13 +391,11 @@ function normalizeAnswer(answer, question) {
   const selected = Array.isArray(answer?.selectedOptionIds)
     ? [...new Set(answer.selectedOptionIds.map(String))]
     : [];
-  const customText = String(answer?.customText || '');
-  const notes = String(answer?.notes || '');
+  const text = String(answer?.text || '');
   return {
     questionId: question.id,
     selectedOptionIds: selected,
-    customText,
-    notes,
+    text,
   };
 }
 
@@ -406,36 +404,32 @@ function validateAnswers(questionSet, rawAnswers, { partial = false } = {}) {
     (Array.isArray(rawAnswers) ? rawAnswers : []).map((answer) => [String(answer.questionId), answer]),
   );
   const errors = [];
-  const NOTES_MAX_LENGTH = 2000;
+  // 选择题的 text 上限；文本题答案上限由各题 maxLength 决定
+  const TEXT_MAX_LENGTH = 2000;
   const answers = questionSet.questions.map((question) => {
     const answer = normalizeAnswer(answerMap.get(question.id), question);
-    if (answer.notes.length > NOTES_MAX_LENGTH) {
-      errors.push(`${question.title} notes exceed ${NOTES_MAX_LENGTH} characters`);
-    }
     if (question.type === 'text') {
-      if (!partial && question.required && !answer.customText.trim()) {
+      if (!partial && question.required && !answer.text.trim()) {
         errors.push(`${question.title} is required`);
       }
-      if (answer.customText.length > question.maxLength) {
+      if (answer.text.length > question.maxLength) {
         errors.push(`${question.title} exceeds ${question.maxLength} characters`);
       }
       answer.selectedOptionIds = [];
       return answer;
     }
 
+    // 选择题：勾选 __other__ 时 text 是自定义答案（计为一个选择），
+    // 未勾选时 text 只是补充说明，不参与选择计数
     const allowed = new Set(question.options.map((option) => option.id));
     if (question.allowOther) allowed.add(OTHER_OPTION_ID);
     if (answer.selectedOptionIds.some((optionId) => !allowed.has(optionId))) {
       errors.push(`${question.title} contains an unknown option`);
     }
-    if (!question.allowOther && answer.customText.trim()) {
-      errors.push(`${question.title} does not allow a custom answer`);
+    if (answer.text.length > TEXT_MAX_LENGTH) {
+      errors.push(`${question.title} text exceeds ${TEXT_MAX_LENGTH} characters`);
     }
-    const legacyCustomSelection = answer.customText.trim()
-      && !answer.selectedOptionIds.includes(OTHER_OPTION_ID)
-      ? 1
-      : 0;
-    const selectionCount = answer.selectedOptionIds.length + legacyCustomSelection;
+    const selectionCount = answer.selectedOptionIds.length;
     if (!partial && question.required && selectionCount === 0) {
       errors.push(`${question.title} is required`);
     }

@@ -100,14 +100,12 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
     {
       "questionId": "q001",
       "selectedOptionIds": ["dashboard"],
-      "customText": "",
-      "notes": "仪表盘需要支持自定义布局。"
+      "text": "仪表盘需要支持自定义布局。"
     },
     {
       "questionId": "q003",
       "selectedOptionIds": [],
-      "customText": "每天使用至少两次。",
-      "notes": ""
+      "text": "每天使用至少两次。"
     }
   ]
 }
@@ -115,24 +113,26 @@ The CLI generates `sessionId` and `roundNumber` when omitted. Reuse `sessionId` 
 
 `answers.json` becomes immutable after submission. Create a later Round for corrections.
 
-**`notes` 字段**：每个 answer 可携带可选的 `notes` 字符串（最大 2000 字符），用于用户对单个问题的补充说明、修正或对选项的质疑。该字段不参与校验，不影响 required / 选项目数约束。旧数据缺少此字段时按空字符串处理。
+**`text` 字段**：每个 answer 带一个可选文本字段（选择题最大 2000 字符；文本题受该题 `maxLength` 约束），含义由题型与 `__other__` 决定：
+
+- 文本题：`text` 就是答案本身，参与 `required` / `maxLength` 校验；
+- 选择题且选中 `__other__`：`text` 是自定义答案，计为一个选择；
+- 选择题且未选中 `__other__`：`text` 是补充说明，不参与校验，不影响 required / 选项目数约束。
 
 ### Other option
 
 When a choice question has `allowOther: true`, store the selected "其他" option
-with the reserved id `__other__`. Supplementary text remains in `customText`:
+with the reserved id `__other__`. The custom answer text goes into `text`:
 
 ```json
 {
   "questionId": "q002",
   "selectedOptionIds": ["__other__"],
-  "customText": "桌面通知"
+  "text": "桌面通知"
 }
 ```
 
-`__other__` is invalid when `allowOther` is false. For backward compatibility,
-an older answer with non-empty `customText` and no `__other__` id is still
-treated as an "其他" selection.
+`__other__` is invalid when `allowOther` is false.
 
 ## Statuses
 

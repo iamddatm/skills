@@ -192,7 +192,7 @@ try {
           {
             questionId: 'restricted',
             selectedOptionIds: ['__other__'],
-            customText: '',
+            text: '',
           },
         ],
       }),
@@ -201,10 +201,10 @@ try {
   assert.equal(rejectedOtherResponse.status, 422);
 
   const answers = [
-    { questionId: 'scope', selectedOptionIds: ['personal'], customText: '', notes: '个人工作台优先，团队版后续迭代。' },
-    { questionId: 'modules', selectedOptionIds: ['tasks', 'notes'], customText: '', notes: '' },
-    { questionId: 'context', selectedOptionIds: [], customText: '先做本地 Demo。', notes: '' },
-    { questionId: 'channel', selectedOptionIds: ['__other__'], customText: '桌面通知', notes: '' },
+    { questionId: 'scope', selectedOptionIds: ['personal'], text: '个人工作台优先，团队版后续迭代。' },
+    { questionId: 'modules', selectedOptionIds: ['tasks', 'notes'], text: '' },
+    { questionId: 'context', selectedOptionIds: [], text: '先做本地 Demo。' },
+    { questionId: 'channel', selectedOptionIds: ['__other__'], text: '桌面通知' },
   ];
   const draftResponse = await fetch(
     `${base}/api/sessions/${first.sessionId}/rounds/1/draft`,
@@ -226,11 +226,14 @@ try {
   const resumed = await resumeRound(dataRoot, first.sessionId);
   assert.equal(resumed.status, 'submitted');
   assert.equal(resumed.roundNumber, 1);
-  // 验证 notes 字段持久化
+  // 验证 text 字段持久化：补充说明、空文本、其他答案三种形态
   const scopeAnswer = resumed.answers.answers.find((a) => a.questionId === 'scope');
-  assert.equal(scopeAnswer.notes, '个人工作台优先，团队版后续迭代。');
+  assert.equal(scopeAnswer.text, '个人工作台优先，团队版后续迭代。');
   const modulesAnswer = resumed.answers.answers.find((a) => a.questionId === 'modules');
-  assert.equal(modulesAnswer.notes, '');
+  assert.equal(modulesAnswer.text, '');
+  const channelAnswer = resumed.answers.answers.find((a) => a.questionId === 'channel');
+  assert.deepEqual(channelAnswer.selectedOptionIds, ['__other__']);
+  assert.equal(channelAnswer.text, '桌面通知');
 
   await createRound({
     sessionId: first.sessionId,
@@ -288,8 +291,8 @@ try {
       ],
     },
     answers: [
-      { questionId: 'scope', selectedOptionIds: ['opt-a'], customText: '' },
-      { questionId: 'detail', selectedOptionIds: [], customText: '第一轮完成' },
+      { questionId: 'scope', selectedOptionIds: ['opt-a'], text: '' },
+      { questionId: 'detail', selectedOptionIds: [], text: '第一轮完成' },
     ],
   });
   assert.equal(directFirst.status, 'submitted');
@@ -320,8 +323,8 @@ try {
       ],
     },
     answers: [
-      { questionId: 'confirm', selectedOptionIds: ['yes'], customText: '' },
-      { questionId: 'note', selectedOptionIds: [], customText: '第二轮完成' },
+      { questionId: 'confirm', selectedOptionIds: ['yes'], text: '' },
+      { questionId: 'note', selectedOptionIds: [], text: '第二轮完成' },
     ],
   });
   assert.equal(directSecond.roundNumber, 2);

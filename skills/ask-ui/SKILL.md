@@ -39,9 +39,9 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
        "roundNumber": 1,
        "submittedAt": "2026-08-14T10:30:00.000Z",
        "answers": [
-         { "questionId": "layout", "selectedOptionIds": ["tabs"], "customText": "", "notes": "" },
-         { "questionId": "modules", "selectedOptionIds": ["tasks", "notes"], "customText": "", "notes": "日历放到下期" },
-         { "questionId": "context", "selectedOptionIds": [], "customText": "先做 MVP", "notes": "" }
+         { "questionId": "layout", "selectedOptionIds": ["tabs"], "text": "" },
+         { "questionId": "modules", "selectedOptionIds": ["tasks", "notes"], "text": "日历放到下期" },
+         { "questionId": "context", "selectedOptionIds": [], "text": "先做 MVP" }
        ]
      }
    }
@@ -51,7 +51,7 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
 
 仅在浏览器打开已由外部管理时使用 `--no-open`。仅在需要固定本地端口时使用 `--port <number>`。
 
-**问题备注**：每个问题的答案支持可选的 `notes` 字段（最大 2000 字符），用户可在表单上对任意问题补充说明或修正。例如 grilling 产出的选项不完全准确时，用户可在备注中说明。构造 QuestionSet 时无需设置，notes 由用户在表单中填写并随答案一起返回。
+**问题文本**：每个答案带一个 `text` 字段（选择题最大 2000 字符；文本题受该题 `maxLength` 约束），含义由题型决定——文本题的 `text` 就是答案本身；选择题勾选"其他"时 `text` 是自定义答案（计为一个选择），未勾选时是补充说明（不参与校验）。例如 grilling 产出的选项不完全准确时，用户可在补充说明中纠正。构造 QuestionSet 时无需设置，`text` 由用户在表单中填写并随答案一起返回。
 
 **最小完整示例**（3 个问题，含推荐答案）：
 
