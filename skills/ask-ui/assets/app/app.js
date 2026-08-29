@@ -111,7 +111,8 @@ function displayAnswer(question, answer) {
 }
 
 function selectionCount(question, answer) {
-  if (question.type === 'text') return answer.text.trim() ? 1 : 0;
+  // 旧版服务器写入的草稿可能缺 text 字段，按空串兜底避免白屏
+  if (question.type === 'text') return (answer.text || '').trim() ? 1 : 0;
   return (answer.selectedOptionIds || []).length;
 }
 
@@ -275,7 +276,8 @@ function renderChoiceQuestion(card, question, answer, editable, sharedInput) {
     });
     const content = element('span', 'option-content');
     content.append(element('span', 'option-label', '其他'));
-    content.append(element('span', 'option-description', '可直接勾选，也可以在下方输入框填写你的答案。'));
+    // 文案必须说清勾选与输入框的关系，避免误以为输入即等于选了“其他”
+    content.append(element('span', 'option-description', '勾选后，下方输入框内容即为你的答案。'));
     otherCard.append(selector, content);
     list.append(otherCard);
   }
