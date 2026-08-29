@@ -49,7 +49,7 @@ description: '将 Agent 工作流中的两个及以上独立问题渲染为本�
 
 7. 如果还需要更多独立问题，用相同的 `sessionId` 再次调用 `ask`，并将 `basedOnRound` 设为返回的轮次号。不再需要更多问题时，运行 `complete` 结束会话。
 
-仅在浏览器打开已由外部管理、或无头/CI 环境无浏览器可打开时使用 `--no-open`。仅在需要固定本地端口时使用 `--port <number>`。
+仅在浏览器打开已由外部管理、或无头/CI 环境无浏览器可打开时使用 `--no-open`。仅在需要固定本地端口时使用 `--port <number>`。使用自定义数据目录 `--data-dir` 时，该会话的所有后续命令（`resume` / `status` / `complete` / `stop`）必须携带同一个 `--data-dir`，否则会静默读写默认目录。
 
 **问题文本**：每个答案带一个 `text` 字段（选择题最大 2000 字符；文本题受该题 `maxLength` 约束），含义由题型决定——文本题的 `text` 就是答案本身；选择题勾选"其他"时 `text` 是自定义答案（计为一个选择），未勾选时是补充说明（不参与校验）。例如 grilling 产出的选项不完全准确时，用户可在补充说明中纠正。构造 QuestionSet 时无需设置，`text` 由用户在表单中填写并随答案一起返回。
 
@@ -154,8 +154,9 @@ ask-ui-session: <sessionId>
 | 脚本静默退出（无 stdout/stderr，退出码 0） | 回退到纯文本格式向用户提问 | 报告脚本 bug 并附上 stderr 诊断信息 |
 | 浏览器未自动打开 | 从 stderr 提取 URL，告知用户手动在浏览器中打开 | 改用 `create` 分离模式 |
 | 端口被占用 | 用 `--port <number>` 指定可用端口 | 改用 `create` 分离模式 |
-| CI / 无头环境无浏览器 | 使用 `create` 分离模式 + 显式 `--data-dir` | 回退到纯文本格式 |
+| CI / 无头环境无浏览器 | 直连 `ask` + `--no-open` 后台运行，或 `create` 分离模式 + 显式 `--data-dir` | 回退到纯文本格式 |
 | `ask` 进程长时间无响应 | 终止进程，用 `complete` 清理脏 Session，重新启动 | 改用 `create` 分离模式 |
+| `stop` 返回 `no-server-info`（直连 `ask` 模式） | 正常现象：直连服务器不落盘 `server.json`，随 `ask` 进程退出自动关闭，无需清理 | 若确为 `create`/`serve` 分离服务器，按 stderr 提示核对 `server.json` 与 pid |
 | `stop` 报错无法终止服务器 | 重跑 `stop`，核对 stderr 错误信息中的 pid | 按 pid 手动终止进程；会话已完成，如实告知用户即可，不阻塞主流程 |
 
 ## 反例与禁止操作
