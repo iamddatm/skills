@@ -154,7 +154,7 @@ ask-ui-session: <sessionId>
 | 脚本静默退出（无 stdout/stderr，退出码 0） | 回退到纯文本格式向用户提问 | 报告脚本 bug 并附上 stderr 诊断信息 |
 | 浏览器未自动打开 | 从 stderr 提取 URL，告知用户手动在浏览器中打开 | 改用 `create` 分离模式 |
 | 端口被占用 | 用 `--port <number>` 指定可用端口 | 改用 `create` 分离模式 |
-| CI / 无头环境无浏览器 | 直连 `ask` + `--no-open` 后台运行，或 `create` 分离模式 + 显式 `--data-dir` | 回退到纯文本格式 |
+| CI / 无头环境无浏览器 | 直连 `ask` + `--no-open`（无人值守，此时允许后台运行并等待其 stdout），或 `create` 分离模式 + 显式 `--data-dir` | 回退到纯文本格式 |
 | `ask` 进程长时间无响应 | 终止进程，用 `complete` 清理脏 Session，重新启动 | 改用 `create` 分离模式 |
 | `stop` 返回 `no-server-info`（直连 `ask` 模式） | 正常现象：直连服务器不落盘 `server.json`，随 `ask` 进程退出自动关闭，无需清理 | 若确为 `create`/`serve` 分离服务器，按 stderr 提示核对 `server.json` 与 pid |
 | `stop` 报错无法终止服务器 | 重跑 `stop`，核对 stderr 错误信息中的 pid | 按 pid 手动终止进程；会话已完成，如实告知用户即可，不阻塞主流程 |
