@@ -61,6 +61,7 @@ node scripts/openai-image-gen.mjs edit --prompt "修改指令" --image 参考图
 
 | 症状 | 一线修复 | 仍失败兜底 |
 |---|---|---|
+| 本地预检错误(请求未发出、无 HTTP 状态,如 `unsupported extension` / `file not found` / `missing --prompt` / `--out fits a single image only`) | 按 stderr 修正输入路径、格式(仅 png/jpg/jpeg/webp/gif)或参数后重跑 | 仍不行则把报错原文给用户核对其输入意图,不去翻网关日志(请求根本没发出去) |
 | 401 `authentication_error` | 向用户重核对令牌,更新 `.env` | 确认令牌属于该网关实例且未过期/未超配额 |
 | 403 `permission_error` | sub2api:分组未开放图像生成;new-api:令牌分组不含该渠道 | 让管理员开通,别反复重试 |
 | 400 `requires an image model` | sub2api 官方版白名单只认 `gpt-image-*` / `grok-imagine*`;其他模型(qwen-image 等)须走 new-api 类网关 | 与用户确认其网关类型与已配置模型 |
