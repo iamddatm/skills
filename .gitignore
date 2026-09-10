@@ -13,6 +13,9 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
+# sub2api-image 首次配置写入的凭据(含 API key,勿提交)
+.env
+
 # 编辑器 / IDE 临时文件
 *.swp
 *~
