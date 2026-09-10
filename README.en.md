@@ -18,6 +18,7 @@ A collection of AI coding skills for Chinese-speaking developers — including a
 | [dotnet-best-practices](skills/dotnet-best-practices) | Best-practice convention checks for .NET/C# code | Adapted | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
 | [dotnet-production-debug](skills/dotnet-production-debug) | .NET production performance troubleshooting: CPU spikes, memory leaks/OOM, deadlocks/hangs, crashes, GC anomalies and dump analysis | Original | — |
 | [grill-with-docs-ui](skills/grill-with-docs-ui) | Form-mode grill-with-docs: grilling's frontier rounds are asked through an ask-ui local interactive form, producing ADRs and a glossary along the way; requires grilling, domain-modeling and ask-ui | Adapted | [grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
+| [openai-image-gen](skills/openai-image-gen) | Text-to-image and image-to-image via OpenAI-compatible `/v1/images` endpoints: supports new-api / sub2api gateways, ships with three equivalent zero-dependency scripts (Node / Python / PowerShell), reference images, mask inpainting and multiple sizes | Original | — |
 | [wpf-stylet](skills/wpf-stylet) | WPF + Stylet MVVM framework guide: lifecycle, Conductor navigation, dialogs, command binding and dependency injection | Original | — |
 
 ## What Are Skills?
