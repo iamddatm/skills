@@ -18,6 +18,7 @@
 | [dotnet-best-practices](skills/dotnet-best-practices) | .NET/C# 代码最佳实践规范检查 | 改编 | [dotnet-best-practices](https://github.com/github/awesome-copilot/tree/main/skills/dotnet-best-practices) |
 | [dotnet-production-debug](skills/dotnet-production-debug) | .NET 生产环境性能故障排查：CPU 飙高、内存泄漏/OOM、死锁/卡死、崩溃、GC 异常与 dump 分析 | 原创 | — |
 | [grill-with-docs-ui](skills/grill-with-docs-ui) | 表单模式拷问：grilling 前沿轮次提问经 ask-ui 本地交互式表单进行，沿途产出 ADR 与术语表；依赖 grilling、domain-modeling、ask-ui | 改编 | [grill-with-docs](https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs) |
+| [inno-setup-installer](skills/inno-setup-installer) | 用 Inno Setup 把 Windows 程序打包成简体中文安装程序：生成 .iss 脚本、自动备好编译环境（缺 Inno Setup 时 winget 安装）、编译出 setup.exe，默认勾选创建桌面快捷方式，支持安装包联网下载最新文件覆盖安装，并经 InnoDependencyInstaller 自动补齐 .NET / VC++ 运行库 | 原创 | — |
 | [openai-image-gen](skills/openai-image-gen) | 通过 OpenAI 兼容图像端点(/v1/images)文生图与图生图:支持 new-api / sub2api 等网关,自带 Node / Python / PowerShell 三份等价零依赖脚本,支持参考图、mask 局部重绘与多尺寸 | 原创 | — |
 | [wpf-stylet](skills/wpf-stylet) | WPF + Stylet MVVM 框架开发指南：生命周期、Conductor 导航、弹窗、命令绑定与依赖注入 | 原创 | — |
 
