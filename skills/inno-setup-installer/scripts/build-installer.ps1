@@ -9,7 +9,8 @@
       2. 找不到且未指定 -NoAutoInstall 时，用 winget 安装 Inno Setup 6
       3. 从注册表卸载项读取版本并校验 >= 6.7（InnoDependencyInstaller 的硬性要求）
       4. 把 .iss 引用到的随包资源（CodeDependencies.iss、ChineseSimplified.isl）拷到同级目录
-      5. 给缺少 UTF-8 BOM 的 .iss / .isl 补上（中文字符串在 6.7.1 及更早版本下的必需条件）
+      5. 只有编译器低于 6.7.2 时，才给缺少 UTF-8 BOM 的 .iss / .isl 补 BOM（6.7.2 起接受无 BOM，
+         补 BOM 会改写文件本身，对入库的 .iss 就是一次莫名的脏改动）
       6. 调用 ISCC 编译，解析输出中的产物路径与体积
 
 .PARAMETER Script
@@ -147,7 +148,8 @@ function Copy-AssetIfNeeded([string]$AssetName, [string]$TargetDir) {
 
 function Add-Utf8Bom([string]$Path) {
     <# 无 BOM 的 UTF-8 文件补上 BOM；返回是否做了修改。
-       Inno Setup 6.7.2 起才接受无 BOM 的 .iss/.isl，补 BOM 能兼容 6.7.0/6.7.1 #>
+       Inno Setup 6.7.2 起才接受无 BOM 的 .iss/.isl，补 BOM 能兼容 6.7.0/6.7.1。
+       注意这是在改用户/项目自己的文件：只在老编译器上调用（见第 5 步）。#>
     $bytes = [System.IO.File]::ReadAllBytes($Path)
     $hasBom = $bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF
     if ($hasBom) { return $false }
@@ -206,15 +208,23 @@ if ($needsDependencies -or $needsChinese -or $ForceStage) {
     if ($needsChinese -or $ForceStage) { Copy-AssetIfNeeded 'ChineseSimplified.isl' $scriptDir }
 }
 
-# ---- 5. 补 UTF-8 BOM（中文字符串的兼容性保障） ----
-$bomFixed = @()
-if (Add-Utf8Bom $scriptPath) { $bomFixed += (Split-Path -Leaf $scriptPath) }
-foreach ($assetName in @('ChineseSimplified.isl')) {
-    $staged = Join-Path $scriptDir $assetName
-    if ((Test-Path -LiteralPath $staged) -and (Add-Utf8Bom $staged)) { $bomFixed += $assetName }
-}
-if ($bomFixed.Count -gt 0) {
-    Write-Step "补 UTF-8 BOM：$($bomFixed -join '、')"
+# ---- 5. 补 UTF-8 BOM（只在老编译器上需要）----
+# 补 BOM 是「改文件」而不是「改参数」：对入库的 .iss 会造成一次莫名的脏工作区（下次 git status
+# 里冒出来的那种）。6.7.2 起编译器已接受无 BOM 的 UTF-8，所以只在更老的版本上补。
+# 版本读不到时保守补上 —— 宁可改文件，也不能让编译因为编码挂掉。
+$needsBom = (-not $version) -or ($version -lt [version]'6.7.2')
+if ($needsBom) {
+    $bomFixed = @()
+    if (Add-Utf8Bom $scriptPath) { $bomFixed += (Split-Path -Leaf $scriptPath) }
+    foreach ($assetName in @('ChineseSimplified.isl')) {
+        $staged = Join-Path $scriptDir $assetName
+        if ((Test-Path -LiteralPath $staged) -and (Add-Utf8Bom $staged)) { $bomFixed += $assetName }
+    }
+    if ($bomFixed.Count -gt 0) {
+        Write-Step "补 UTF-8 BOM：$($bomFixed -join '、')"
+    }
+} else {
+    Write-Host "    Inno Setup $version 接受无 BOM 的 UTF-8，跳过补 BOM（不改动源文件）"
 }
 
 # ---- 6. 编译 ----

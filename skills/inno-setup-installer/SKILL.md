@@ -1,6 +1,6 @@
 ---
 name: inno-setup-installer
-description: '把 Windows 应用打包成简体中文安装程序：生成 Inno Setup 的 .iss 脚本、备好编译环境（必要时自动 winget 安装 Inno Setup）、调用 ISCC 编译出 setup.exe，默认勾选创建桌面快捷方式，支持「安装包联网下载最新文件覆盖安装」的在线安装包，并用 InnoDependencyInstaller 自动补齐 .NET / VC++ 运行库等依赖。用户提到生成/制作/打个安装包、安装程序、setup.exe、Inno Setup、.iss 脚本、安装向导、桌面快捷方式、安装时自动装运行库或 .NET 运行时、在线安装包/覆盖式安装、给程序加卸载入口等场景时使用本技能；即使没点名 Inno Setup，只要要把构建好的 Windows 程序做成安装包，也应使用本技能。'
+description: '把 Windows 应用打包成简体中文安装程序：生成 Inno Setup 的 .iss 脚本、备好编译环境（必要时自动 winget 安装 Inno Setup）、调用 ISCC 编译出 setup.exe，默认勾选创建桌面快捷方式，支持「安装包联网下载最新文件覆盖安装」的在线安装包（含「内置基线 + 安装时读更新清单只拉增量覆盖」的混合形态），并用 InnoDependencyInstaller 自动补齐 .NET / VC++ 运行库等依赖。用户提到生成/制作/打个安装包、安装程序、setup.exe、Inno Setup、.iss 脚本、安装向导、桌面快捷方式、安装时自动装运行库或 .NET 运行时、在线安装包/覆盖式安装、安装时读取线上最新版本、给程序加卸载入口等场景时使用本技能；即使没点名 Inno Setup，只要要把构建好的 Windows 程序做成安装包，也应使用本技能。'
 ---
 
 # Inno Setup 安装包制作
@@ -11,10 +11,10 @@ description: '把 Windows 应用打包成简体中文安装程序：生成 Inno 
 
 ## 先摸清需求，再动笔
 
-安装包的形态差异很大，猜错一次就要返工。**能从项目里读出来的自己读**（发布目录、主程序 exe 名、版本号往往在 `.csproj` / `package.json` / 构建脚本里），把提问留给真正要用户拍板的事：
+安装包的形态差异很大，猜错一次就要返工。**能从项目里读出来的自己读**（发布目录、主程序 exe 名、版本号往往在 `.csproj` / `package.json` / 构建脚本里；版本号尽量**从已构建的产物本身**读——打进包的那份才是事实，单独的版本文件容易和产物漂移），把提问留给真正要用户拍板的事：
 
 1. **载荷从哪来** —— 应用构建好了吗？发布目录是哪个？有没有需要排除的文件（`*.pdb`、`appsettings.Development.json`）？
-2. **离线还是在线** —— 载荷打进安装包（离线，默认）？还是安装包运行联网下载最新文件覆盖安装（在线）？用户说"安装包自己去网上拉最新版"就是后者，见下文对应章节。
+2. **离线、在线，还是两段式** —— 载荷打进安装包（离线，默认）？安装包联网下载**全量**载荷覆盖安装（在线）？还是内置一份基线、安装时按服务端清单只拉**增量**覆盖（混合）？这是最容易猜错的一条：**先问清上游服务器上到底放了什么**——只有全量包、只有增量包、还是两者都有。用户说"安装包自己去网上拉最新版"时，先分清是哪一种；形态选错，整份脚本都要返工。
 3. **装给谁** —— 全机安装（`{autopf}`，需要管理员）还是只装当前用户（`{localappdata}`）？
 4. **要不要装运行库** —— 目标机缺 .NET Desktop Runtime / VC++ / WebView2 吗？缺的话交给 CodeDependencies 处理，别让用户手动装。
 5. **杂项** —— 主程序 exe 名、程序图标、编译出的安装包放哪、要不要开机自启、要不要写注册表或做文件关联。
@@ -34,7 +34,7 @@ pwsh -NoProfile -File "<skill>/scripts/build-installer.ps1" -Script "D:/path/to/
 2. 找不到就 `winget install --id JRSoftware.InnoSetup -e`（装的是 Inno Setup 6，当前 winget 源里是 6.7.3）。加 `-NoAutoInstall` 可以改成只报错不动机器。
 3. 校验版本号 ≥ 6.7（InnoDependencyInstaller 的硬性要求）。版本号从注册表卸载项读——`ISCC.exe` 自身的版本资源是 `0.0.0.0`，别指望从它或命令行输出里拿到版本。
 4. 把 `.iss` 用到的随包资源拷到它同级目录，相对路径即可引用：`CodeDependencies.iss`（依赖库）和 `ChineseSimplified.isl`（中文界面）。
-5. 给缺少 BOM 的 `.iss` / `.isl` 补上 UTF-8 BOM（中文的坑，见"常见陷阱"）。
+5. 只在编译器低于 6.7.2 时才补 UTF-8 BOM（6.7.2 起接受无 BOM 的 UTF-8；补 BOM 是**改写文件本身**，入库的 `.iss` 会被改脏，见"常见陷阱"）。
 6. 编译，并从 ISCC 输出里解析出产物的真实路径和体积打印出来。
 
 自己动手排查时，`ISCC.exe <路径>` 也能直接跑；退出码 0 是成功，非 0 时把 stdout 原样读一遍，Inno 的报错信息通常直接指出是第几行哪个指令写错了。
@@ -67,6 +67,8 @@ OutputDir=Output
 OutputBaseFilename={#MyAppName}-{#MyAppVersion}-setup
 ; VersionInfoVersion 只吃纯数字四段，"1.2.3-beta" 这类要先剥掉后缀
 VersionInfoVersion=1.2.3.0
+; 压缩档是编译耗时的大头:几百 MB 载荷下换 lzma2/fast 能快数倍(产物大一些),
+; 开发期反复打包就用它,发版再切回 max。实测对比见 references/inno-script-cookbook.md 的 §1。
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
@@ -129,12 +131,13 @@ end;
 - 已实现的依赖有 60 多个（.NET Framework 3.5~4.8.1、.NET Core/.NET 5~10 的各种运行时、VC++ 2005~2026、SQL Server Express、WebView2、Windows App SDK、OpenJDK、Python、PowerShell 7……）。完整函数名和常见选型见 `references/dependencies.md`。
 - 选哪个版本要跟应用的 `TargetFramework` 对齐，**猜错会导致依赖装了但程序仍跑不起来**——从 `.csproj` 读，读不到就问用户。
 - 目标机不能上网时，把安装程序打进包里离线使用；用法同样在 `references/dependencies.md`。
+- **自带运行时的应用通常一个依赖都不需要**：Electron / Tauri / Go / Rust 的产物自带运行时、或已静态链接 CRT，VC++ 与 .NET 对它们是多余的，塞进去只会平白要求管理员权限（还会和 `PrivilegesRequired=lowest` 的仅当前用户安装冲突）。别为了"稳妥"往里加依赖函数。
 
 `PrivilegesRequired=admin` 和 `ArchitecturesInstallIn64BitMode` 是这套依赖机制的前提，骨架里已经有，别删。
 
-## 变体：安装包联网下载最新文件覆盖安装
+## 变体 A：全量在线（安装包联网下载完整载荷）
 
-用户要的是"安装包自己上网拉最新的更新包，覆盖装上去"，而不是把载荷打进安装包时，用 Inno Setup 6 的**原生下载 + 解压**能力，不需要写 Pascal 脚本、也不需要第三方下载插件：
+用户要的是"安装包自己上网拉最新的更新包，覆盖装上去"，而**上游有完整的载荷包、URL 在编译期就已知**时，用 Inno Setup 6 的**原生下载 + 解压**能力，不需要写 Pascal 脚本、也不需要第三方下载插件：
 
 ```iss
 [Setup]
@@ -159,7 +162,19 @@ Source: "https://download.example.com/client-latest.zip"; \
 - **覆盖不等于同步**：安装只会覆盖同名文件，旧版有、新版删掉的文件会残留在 `{app}` 里。要真正镜像新版内容，得先加 `[InstallDelete]` 清掉旧目录（详见 cookbook）。这一条是"覆盖式升级"最常见的翻车点。
 - URL 建议用 `#define` 抽出来（`Source: "{#PayloadUrl}"`），或在命令行用 `ISCC /DPayloadUrl=...` 传入，方便换环境。
 
-也能用 Pascal 脚本自己搭个下载页（`TDownloadWizardPage`）把包下到 `{tmp}` 再解压——那是 6.3 有原生下载之前的老办法，函数签名繁琐、很容易写出 `Invalid number of parameters`，除非确实需要自定义下载逻辑（多点回退、断点续传），否则别绕这条路。
+需要自定义下载逻辑时（URL 在编译期未知、文件名与哈希要从清单里读、多点回退），**别去手搭 `TDownloadWizardPage` 下载页**——那是 6.3 有原生下载之前的老办法，函数签名繁琐、很容易写出 `Invalid number of parameters`。用支撑函数 `DownloadTemporaryFile` 在 `CurStepChanged` 里直接下，三五行就够，进度条交给 `CreateOutputProgressPage`（签名与坑见 `references/scripting-api.md`）。
+
+## 变体 B：混合（内置基线 + 安装时按清单拉增量）
+
+上游只提供**增量包**（例如只含 `resources/` 的更新包），或你不希望服务器常驻上百 MB 的全量包，但要求「装完即最新版」时：安装包自带一份完整基线（含运行时本体），`CurStepChanged(ssInstall)` 里读服务端清单、比版本、下载增量包，`CurStepChanged(ssPostInstall)` 里解包覆盖 `resources/`。
+
+三个最容易翻车的点（完整做法与验证配方见 `references/inno-script-cookbook.md` 的 §11-B 与 §13）：
+
+- **解包必须晚于 `[Files]` 的拷贝**（挂 `ssPostInstall`），放早了基线会把刚解出来的新文件盖回去。
+- **`.tar.gz` 用系统自带的 `{win}\System32\tar.exe` 解**：Inno 自己的 `extractarchive` 只保证 `.7z/.zip/.rar`，不认 tar.gz。
+- **增量解出的文件不在 Inno 的安装清单里**，卸载要靠 `[UninstallDelete]` 清，否则留一地残留。
+
+判断与下载要挂在静默安装下也会触发的事件上，`Exit` 在 `try..except` 里的行为也和直觉不同——这两条都在 `references/scripting-api.md`。
 
 ## 编译与验收
 
@@ -168,6 +183,7 @@ Source: "https://download.example.com/client-latest.zip"; \
 1. ISCC 退出码为 0，输出里有 `Successful compile`，并拿到了产物的真实路径。
 2. 产物文件存在且体积合理（明显偏小说明 `[Files]` 的 `Source` 路径没匹配上——注意 `Source` 是相对 `.iss` 所在目录，不是当前工作目录）。
 3. `.iss` 里 `[Languages]` 挂的是中文文件、`[Tasks]` 那行没有 `unchecked`。
+4. **在线/混合形态另加一条**：按 `references/inno-script-cookbook.md` §13 用本机伪装的更新源，把「读清单 → 下载 → 校验 → 覆盖」真跑一遍，并断言「不需要更新」时装出来与基线逐文件哈希全等。联网逻辑没实测过就交付，等于把问题留给用户。
 
 想更稳妥，可以在临时目录静默装一遍验证（会真的安装到系统，测试完记得卸载）：
 
@@ -175,20 +191,21 @@ Source: "https://download.example.com/client-latest.zip"; \
 pwsh -NoProfile -c "Start-Process -Wait -FilePath 'D:/path/setup.exe' -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/LOG=D:/tmp/install.log'"
 ```
 
-装完看日志和 `{app}` 目录里的文件是不是齐的；用 `/LOG` 时日志会记录每条依赖的判断结果（`Dependency already installed:` / `Dependency queued for download:`）。
+装完看日志和 `{app}` 目录里的文件是不是齐的；用 `/LOG` 时日志会记录每条依赖的判断结果（`Dependency already installed:` / `Dependency queued for download:`），你自己 `Log()` 出来的判断行也都在里面。**静默安装照常执行联网步骤**（实测），所以这条验收同时也覆盖在线形态。
 
 **交付前顺带确认授权**：Inno Setup 6.7+ 的编译器每次都会打印 `Non-commercial use only`。官方授权页的原文是"we request that all commercial users of Inno Setup purchase licenses, regardless of the version being used"（<https://jrsoftware.org/isorder.php>）。如果这个安装包要用在商业产品上分发，把这条告诉用户，由他决定是否采购授权——别替他默认。
 
 ## 常见陷阱
 
 - **中文语言文件要自带**：Inno Setup 的安装包**不含**简体中文——6.7.3 的 `Languages\` 目录里只有 29 种官方语言，`ChineseSimplified.isl` 归在源码库的 `Unofficial\` 下、不随安装包发布。所以别写 `compiler:Languages\ChineseSimplified.isl`，那会直接编译失败"找不到文件"。用技能自带的 `ChineseSimplified.isl`（构建脚本负责放到 `.iss` 同级目录）。
-- **中文乱码**：`.iss` / `.isl` 里的中文必须存成 UTF-8；Inno Setup 6.7.2 起才接受**无 BOM** 的 UTF-8，更早的版本只认带 BOM 的。构建脚本会自动补 BOM，用编辑工具直接写就行；手动编译报"行内出现非法字符"时先查编码。
+- **中文乱码**：`.iss` / `.isl` 里的中文必须存成 UTF-8；Inno Setup 6.7.2 起才接受**无 BOM** 的 UTF-8，更早的版本只认带 BOM 的（6.7.3 实测能直接编无 BOM 的中文脚本与语言文件）。手动编译报"行内出现非法字符"时先查编码。**补 BOM 是改文件本身**，而构建脚本只在低于 6.7.2 时动它——`.iss` 若要入库，别让编译器改到你那份原件：把 `.iss` 连同生成的构建变量暂存到 `build/` 这类被忽略的目录里再编，源文件一个字节都不动。
 - **`AppId={{GUID}`**：双花括号是转义，结尾只有一个 `}`。写成 `{{GUID}}` 会在卸载列表里留下多余的花括号。
 - **`VersionInfoVersion`**：只接受纯数字四段；带 `-beta` 的语义化版本号必须先剥后缀，否则编译期报错。
 - **`OutputBaseFilename` 用 ASCII**：界面是中文就够了，安装包文件名保持纯英文，避免在别人的下载工具、邮件网关、老 FAT 分区上出岔子。
-- **`[Code]` 段的注释是 `//` 不是 `;`**：`[Setup]` / `[Files]` 这类配置段里 `;` 是注释，但 `[Code]` 是 Pascal，`;` 是语句分隔符。在 `[Code]` 里用 `;` 写中文注释会报 `Error on line N: 'BEGIN' expected`，而且报错行号指向函数开头，很难联想到是注释写法的问题。
+- **`[Code]` 段的注释是 `//` 不是 `;`**：`[Setup]` / `[Files]` 这类配置段里 `;` 是注释，但 `[Code]` 是 Pascal，`;` 是语句分隔符。写在 `const` / `var` 声明区里报 `Identifier expected`，写在语句位置报 `'BEGIN' expected`，而且报错行号常常指向函数开头，很难联想到是注释写法的问题。写完 `[Code]` 扫一遍自己敲的每个 `;`，比对着报错猜快得多。
+- **`[Code]` 段的 Pascal 坑单独成篇**：读文本文件、拿内置名当变量名、`Exit` 跳出 `try..except` 的收尾、Int64 与 Longint……写 `[Code]` 之前先读 `references/scripting-api.md`，那里还有函数签名与事件触发时机表（标了哪些事件在静默安装下是实测触发的、哪些没验证过因而不能赌）。
 - **`Source` 的相对路径基准是 `.iss` 所在目录**，不是你的 shell 当前目录。
 - **`ArchitecturesInstallIn64BitMode` 只给 64 位程序写**：32 位程序写了它，`{app}` 会解析到 `Program Files` 而非 `Program Files (x86)`。
 - **装当前用户（`PrivilegesRequired=lowest`）就别指望装运行库**：`{autopf}` 这类自适应常量会跟着解析到用户目录，不会出错，但 CodeDependencies 要把运行库装到全机、写 `HKLM`，没有管理员权限做不到。要装依赖就必须 admin。
 
-需要更细的段落写法、常量表、在线安装包的完整例子时，读 `references/inno-script-cookbook.md`；需要挑依赖函数时读 `references/dependencies.md`。
+需要更细的段落写法、常量表、在线与混合安装包的完整做法时，读 `references/inno-script-cookbook.md`（§11 两种在线形态、§13 本机伪装源的端到端验证配方）；写 `[Code]` 段前读 `references/scripting-api.md`（函数签名 / 事件触发时机 / Pascal 坑）；**查函数签名先 grep `references/inno-help/api-index.txt`**（官方帮助的签名索引，约一千行，不必联网）；需要挑依赖函数时读 `references/dependencies.md`。

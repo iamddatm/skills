@@ -14,8 +14,9 @@ SKILL.md 里的骨架模板之外的补充：各段落常用写法、目录常�
 - [8. `[Registry]`：注册表、开机自启、文件关联](#8-registry注册表开机自启文件关联)
 - [9. `[Run]` 与 `[UninstallRun]`](#9-run-与-uninstallrun)
 - [10. `[Code]` 常用 Pascal 片段](#10-code-常用-pascal-片段)
-- [11. 在线安装包完整示例](#11-在线安装包完整示例)
+- [11. 在线与混合安装包](#11-在线与混合安装包)
 - [12. 调试与排错](#12-调试与排错)
+- [13. 在线链路的端到端验证](#13-在线链路的端到端验证)
 
 ## 1. `[Setup]` 常用指令
 
@@ -27,7 +28,7 @@ SKILL.md 里的骨架模板之外的补充：各段落常用写法、目录常�
 | `PrivilegesRequired` | `admin` / `poweruser` / `lowest`。装到 `{autopf}`、装运行库、写 `HKLM` 都需要 `admin`。 |
 | `ArchitecturesAllowed` | 允许在哪些架构上安装，如 `x64compatible`、`arm64`。 |
 | `ArchitecturesInstallIn64BitMode` | 安装模式按 64 位走（`{app}` 落到 `Program Files`）。**32 位程序不要写。** |
-| `Compression` | `lzma2/max` 体积最小、编译最慢；追求编译速度用 `lzma/fast` 或 `zip`。 |
+| `Compression` | 编译耗时的大头（几百 MB 载荷时占绝大部分时间）。`lzma2/max` 体积最小、最慢；实测 340MB 载荷：`lzma2/max` 62 秒 / 99.5MB、`lzma2/normal` 40 秒 / 103MB、`lzma2/fast` 10 秒 / 126MB、`none` 3 秒 / 341MB。**开发期用 `fast`（或 `none`）迭代，发给用户的产物切回 `max`** —— 档位不同产物同名，很容易把慢档那个发出去。 |
 | `SolidCompression` | `yes` 进一步压缩，代价是单文件解压慢。 |
 | `WizardStyle` | `modern`（默认）/ `classic` / `modern dynamic`。 |
 | `OutputDir` | 产物目录，相对 `.iss` 所在目录；默认 `Output`。 |
@@ -160,6 +161,8 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "--unregister"; Flags: runhidden
 
 ## 10. `[Code]` 常用 Pascal 片段
 
+函数签名、事件触发时机、以及 Pascal 侧那些坑（注释、AnsiString、内置名、`Exit` 与 `try`）单独放在 `scripting-api.md`，写 `[Code]` 前先过一遍。
+
 `[Code]` 里是 Pascal，注释一律用 `//` 或 `(* *)`；写成 `;` 会被当成语句分隔符，编译报 `'BEGIN' expected`（报错行号还指向函数开头，极具迷惑性）。
 
 ```iss
@@ -181,9 +184,16 @@ end;
 
 `InitializeSetup` 是全局唯一的初始化入口——用了 CodeDependencies 时，依赖函数也要写在这里面（见 `references/dependencies.md`）。想加自定义向导页用 `CreateInputOptionPage` / `CreateInputDirPage`。
 
-## 11. 在线安装包完整示例
+## 11. 在线与混合安装包
 
-载荷不进安装包，安装时联网拉最新更新包并覆盖安装：
+载荷不进安装包、安装时联网取最新版，有两种形态。**先看上游服务器上到底有什么，再选形态**——选错一次就白干：
+
+- **A. 全量在线**：上游有完整的载荷包，且 URL 在编译期就已知。用 Inno 6 的原生下载 + 解压，`[Code]` 段一行 Pascal 都不用写。
+- **B. 混合（内置基线 + 安装时按清单只拉增量）**：上游只有增量包（例如只含 `resources/` 的更新包），或你不希望服务器常驻上百 MB 的全量包，但要求「装完即最新版」。安装包自带一份完整基线（含运行时本体），安装时读服务端清单，有新版就把增量包下下来覆盖上去。
+
+A 用不了的两种情形都会落到 B：**URL 随版本变**（文件名带内容哈希来断 CDN 缓存）、或**「最新版是几」要到运行时才知道**——`[Files]` 的 `Source` 在编译期就定死了。
+
+### A. 全量在线（原生下载 + 解压）
 
 ```iss
 [Setup]
@@ -232,6 +242,35 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}
 - 完整性校验二选一：固定版本身份用 `Hash: "<sha256>"`；滑动 `latest` 用 `issigverify` + `[ISSigKeys]`，或明确接受不校验。
 - 电脑需要联网才能装；目标环境不能上网就改用离线方案（载荷 `Source` 指向本地目录）。
 
+### B. 混合：内置基线 + 安装时按清单只拉增量
+
+前提是上游的增量包**「覆盖得动」**：它替换的那部分（例如 `resources/`）不牵动基线里的运行时本体。这决定了它跟不了「换运行时/换框架」那类打包级大版本变更——清单里通常有类型标记（`type: payload` / `full` 之类），遇到要求全量的标记就走降级路径，并明确告诉用户「应用启动后会提示升级」。
+
+骨架（`[Files]` 铺基线，`[Code]` 两处钩子）：
+
+```iss
+[Files]
+; 基线：完整载荷，含运行时本体；增量包只覆盖其中一部分
+Source: "{#PayloadDir}/*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[UninstallDelete]
+; 增量解出来的文件不在 Inno 的安装清单里，卸载不会自动清 —— 漏了就是卸载残留
+Type: filesandordirs; Name: "{app}\resources"
+
+[Code]
+// CurStepChanged(ssInstall)：读清单 → 比版本 → 下载（清单里的 sha256 交给 DownloadTemporaryFile 自动校验）
+// CurStepChanged(ssPostInstall)：解包覆盖 —— 必须晚于 [Files] 的拷贝，否则基线会把新文件盖回去
+```
+
+要点（每条都是踩出来的）：
+
+1. **读清单用 `LoadStringsFromFile` + `StringJoin`** 拼成长串再做子串查找；别用 `LoadStringFromFile`（见 `scripting-api.md` 坑 2）。
+2. **比版本按段比整数**：`26.10.1.1` 大于 `26.9.1.1`，按字符串比会判反。相等或更低时**必须跳过**，否则会把已装好的新版**降级**。
+3. **校验用的哈希来自清单，不要写死在脚本里**：`DownloadTemporaryFile` 第 3 个参数传它，内容对不上直接抛异常，正好用 `try..except` 兜住降级。
+4. **解 `.tar.gz` 别指望 Inno**：`extractarchive` 只保证 `.7z/.zip/.rar`（用精简过的 7z.dll）。上游给的是 tar.gz 就用系统自带的 `{win}\System32\tar.exe`（bsdtar，Win10 1803 起随系统；而 Electron 这类框架本身就要 Win10 1809+，目标机必有）：`tar -xzf "<包>" -C "<安装目录>"`，**默认覆盖同名文件**、支持中文与空格路径（均实测）。路径钉 `{win}\System32` 而不是 `{sys}` —— 后者受 64 位安装模式影响，会解析到 SysWOW64。
+5. **钩子与顺序**：判断/下载挂 `ssInstall`（静默安装下也触发），解包挂 `ssPostInstall`。别挂 `NextButtonClick`，静默安装下不保证触发（证据见 `scripting-api.md` 的事件表）。
+6. **失败一律降级**：任何一步出问题都只写日志 + 在完成页写明「已安装基线版 vX，客户端启动后会提示升级」，让用户一眼知道装到的是哪一版。
+
 ## 12. 调试与排错
 
 - **看编译输出**：ISCC 会对未知的 `[Setup]` 指令、缺失的消息键、匹配不到文件的 `Source` 发出 warning。**警告不要略过**——`Source` 匹配不到文件时编译照样"成功"，但装出来是空壳。
@@ -239,3 +278,21 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#MyAppName}}
 - **静默安装验证**：`setup.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /LOG=...`，装完核对 `{app}` 内容再用 `/VERYSILENT` 跑卸载程序清理。
 - **中文乱码**：`.iss` 存成 UTF-8；Inno Setup 5.3.5~6.7.1 只认带 BOM 的 UTF-8，6.7.2 起才支持无 BOM。
 - **产物太小**：九成是 `[Files]` 的 `Source` 相对路径写错（相对 `.iss` 目录），或 `Excludes` 把所有文件都排除了。
+
+## 13. 在线链路的端到端验证
+
+「编译成功」只说明语法没错。在线形态必须把**「读清单 → 下载 → 校验 → 覆盖」真跑一遍**，否则交付的是没验证过的联网逻辑——用户装的时候才发现问题，代价大得多。做法：
+
+1. **造假源**：拿一个目录当站点根，放一份清单（版本号抬到高于基线）+ 一个**改装过**的载荷包。
+2. **改装要能证明两件事**：往包里**加一个基线没有的标记文件**，并且**改一个基线里已有文件的内容**。只加新文件证明不了「覆盖」真的发生了。
+3. **重新打包、按内容哈希命名**，把真实 sha256 写回清单（哈希与内容不一致时校验会（正确地）把你拦下——顺便也验证了校验确实在生效）。
+4. **起本机服务**：`node -e` 里十来行 `http.createServer` 就够，别为一次验证去装东西。再把安装包重编一版指向它：更新地址抽成 `#define`，命令行 `/DUpdateBase=http://127.0.0.1:8099` 传入。项目里更省事的做法是让包装脚本生成一份 `build-config.iss`（`#define AppVersion / PayloadDir / UpdateBase`），`.iss` 顶部 `#include "build-config.iss"`（两文件同目录即可，路径按脚本所在目录解析），再一起暂存到被忽略的目录里编译——顺手解决「编译会改写源文件」和「项目相关值不该写死在 .iss 里」两件事。
+5. **静默装到临时目录**（`/DIR=`），断言：标记文件在、被改文件的内容是新的、`/LOG` 里有你 `Log()` 的判断/下载/解包那几行。**静默安装照常执行下载**（实测），所以这一步真能覆盖联网路径。
+6. **再对真实源装一遍**：线上版本与基线相同时应走「不更新」分支，装出来与基线**逐文件哈希全等**（`sha256sum` 比对，`unins*` 除外）。
+7. **卸载**：安装目录、桌面/开始菜单快捷方式、卸载注册项都该干净；增量解出的文件靠 `[UninstallDelete]` 清。
+8. **收尾**：把产物用真实地址重编一次，别把指向 `127.0.0.1` 的安装包留在产物目录里。
+
+两个会让验证结果骗你的坑：
+
+- **别在 bash 里 `cd` 进安装目录再跑卸载器**：Windows 删不掉某个进程的当前目录，看起来像「卸载残留目录」，其实是测试手法的锅。
+- **Git Bash 里 `sha256sum <带反斜杠的路径>` 会给哈希加 `\` 前缀转义**（算清单哈希时正好被坑）；写成 `sha256sum < <文件>`，或先把路径换成正斜杠。
