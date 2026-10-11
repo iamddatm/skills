@@ -1,6 +1,6 @@
 ---
 name: claude-code-native-update
-description: 'Windows 受限网络环境下安装、更新或迁移 Claude Code 原生版：直连 downloads.claude.ai 报 ECONNREFUSED、"Download timed out"、"connection dropped"，claude install/update 下载超时失败，doctor 报 claude.exe 缺失或损坏，或用户提到 install claude / 安装 claude / 全新安装 / update claude / 更新 claude / 迁移到原生安装时使用。走本地代理手动下载 + SHA256 校验 + 离线部署。'
+description: 'Windows 受限网络环境下安装、更新或迁移 Claude Code 原生版：直连 downloads.claude.ai 报 ECONNREFUSED、"Download timed out"、"connection dropped"，claude install/update 下载超时失败，doctor 报 claude.exe 缺失或损坏，或用户提到 install claude / 安装 claude / 全新安装 / update claude / 更新 claude / 迁移到原生安装时使用。走本地代理手动下载 + SHA256 校验 + 离线部署；更新流程在交棒前附「变更总结与配置影响分析」，用户更新后追问「更新了什么」「这次更新对我有什么影响」时同样使用。'
 ---
 
 # Claude Code 原生安装：安装、更新与迁移
@@ -24,9 +24,10 @@ description: 'Windows 受限网络环境下安装、更新或迁移 Claude Code 
 | Manifest | `.../claude-code-releases/<ver>/manifest.json` → `platforms."win32-x64"` 含 `checksum`（SHA256）与 `size` |
 | 二进制 URL | `.../claude-code-releases/<ver>/win32-x64/claude.exe` |
 | 体检命令 | `claude doctor`（期望 "No installation issues found"） |
+| 官方 CHANGELOG | `https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md`（约 1 MB，`## <版本号>` 分节、新版在前） |
 | 本地代理 | 按优先级自动检测（见第 0 步）：环境变量 `$env:HTTPS_PROXY` / `$env:HTTP_PROXY` → Windows 系统代理注册表 → 常见本地端口（7890/10809/1080）→ 全部失败才询问用户 |
 
-所有网络请求都必须带 `-Proxy $proxy`。
+所有发往 `downloads.claude.ai` 的网络请求都必须带 `-Proxy $proxy`；CHANGELOG 在 `raw.githubusercontent.com` 上，先直连、失败再加代理。
 
 ## 更新原生版（常用流程）
 
@@ -101,20 +102,50 @@ Invoke-WebRequest "https://downloads.claude.ai/claude-code-releases/$ver/win32-x
 
 下载耗时随代理带宽浮动（几分钟到十几分钟不等），别按预估时间判断，**以后台任务完成通知和两项校验输出为准**：下载**必须放后台执行**，期间定期检查 `$dl` 文件大小增长，确认没卡死。注意：`sleep N && 检查大小` 这类监控命令，N 控制在约 100 秒内——Bash 工具默认 2 分钟超时，会连监控命令一起杀死（exit 143）；要盯更久就拆成多次检查或显式传 timeout 参数。
 
+**变更总结与配置影响分析（交棒前，会话内完成）**——两项校验都为 True 之后、交棒之前做完。交棒后本会话即结束，等用户替换完再想补做，已经没有会话可以执行了。
+
+若用户是在更新**完成后**新开会话里追问「更新了什么」（此前没走过本流程，没有下载校验上下文），同样走本节：把区间起点用 `AskUserQuestion` 问用户旧版本号，别猜——此时 `claude --version` 已是新版本，猜不出来。
+
+拉官方 CHANGELOG：
+
+```powershell
+$chg = "$env:TEMP\cl-changelog-$ver.md"
+# 先直连；失败再加 -Proxy $proxy
+Invoke-WebRequest 'https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md' -OutFile $chg -TimeoutSec 60
+```
+
+版本区间 = 本机当前版本 → manifest 的 `$ver`。**本机当前版本用 `claude --version` 取，此刻它仍是替换前的旧版本**——这正是区间的起点。文件新版在前，用 `Grep -n "^## 2\.1\."` 定位行号后取区间。
+
+区间跨几十个版本时可达数千行，直接读会吃掉大量上下文：交给 general-purpose 子 agent 归纳，要求它按主题分类（新功能 / 行为与破坏性变更 / 安全修复 / 更新机制修复），逐条带版本号与原文关键句。
+
+🔴 **子 agent 的摘要必须回原文抽查**。抽查时**放宽关键词**——实测用窄词 `non-UTF-8` 判定某条不存在，换宽匹配 `not valid UTF-8` 后在原文命中。窄词否定不可采信，它会把真实条目误判成编造。
+
+再对照用户配置找影响：读 `%USERPROFILE%\.claude\settings.json`、全局 `CLAUDE.md` / `AGENTS.md`、项目级 settings，看哪些变更恰好落在用户已设的键位或已写下的约定上。**`.claude.json` 只读，严禁写入**（内含登录态）。确实没有就直说「未见直接影响」，不为凑数编关联。
+
+输出按以下七段、固定顺序：
+
+1. **版本区间**——旧 → 新
+2. **与你配置相关**（置顶）——逐条「变更 + 受影响的文件/约定 + 建议动作」
+3. **新功能速览**——只列用户可感知的命令、flag、键位
+4. **行为变更 / 破坏性变更**——每条标注「想保持旧行为要怎么做」
+5. **性能与安全修复**——概述
+6. **安装更新机制相关**——与手动流程有关的部分
+7. **待确认项**——需要用户回答才能给出准确建议的问题
+
 **后半段（agent 无法在自己的会话内执行）**——运行中的 claude.exe 被 Windows 锁定，锁住它的正是 agent 自己的会话，所以会话内 `Copy-Item` 必然失败。正确姿势：
 
 1. 会话内用 Write 生成独立替换脚本 `%TEMP%\install-claude-<ver>.ps1`，三个要点：
    - 硬编码 manifest 的 SHA256 与 size，替换前离线复验一次（防下载文件在关会话后被改动）
    - `Copy-Item $dl "$env:USERPROFILE\.local\bin\claude.exe" -Force` 失败时明确报「可能还有 claude 会话或终端在运行」
    - 替换成功后 `Remove-Item $dl`
-2. 🔴 CHECKPOINT · 交棒用户（流程在此离开 agent）：告知用户关闭所有 claude 会话和终端 → 新开 PowerShell 运行 `& $env:TEMP\install-claude-<ver>.ps1`（这一步只能用户做：agent 无法在自己退出后再执行命令，交代完即结束本次任务，不要尝试自己跑替换）
+2. 🔴 CHECKPOINT · 交棒用户（流程在此离开 agent）：**交棒前必须已输出变更总结**（见上一小节），交棒后无法补做 → 告知用户关闭所有 claude 会话和终端 → 新开 PowerShell 运行 `& $env:TEMP\install-claude-<ver>.ps1`（这一步只能用户做：agent 无法在自己退出后再执行命令，交代完即结束本次任务，不要尝试自己跑替换）
 3. 用户开新终端验证：`claude --version` 应显示新版本，`claude doctor` 应无异常
 
 ## 全新安装原生版
 
 适用：机器上从未装过 Claude Code，或 doctor 报 claude.exe 缺失/损坏需要修复。
 
-前半段同上（第 0 步确认代理 → 后台下载 → SHA256 与 size 两项校验都为 True）。后半段与更新不同：目标位置没有运行中的 claude.exe，不存在 Windows 文件锁，**无需生成交棒脚本，会话内直接完成部署**：
+前半段同上（第 0 步确认代理 → 后台下载 → SHA256 与 size 两项校验都为 True）；**变更总结一节跳过**——无旧版本，没有区间起点。后半段与更新不同：目标位置没有运行中的 claude.exe，不存在 Windows 文件锁，**无需生成交棒脚本，会话内直接完成部署**：
 
 1. `New-Item -ItemType Directory "$env:USERPROFILE\.local\bin" -Force`
 2. `Copy-Item $dl "$env:USERPROFILE\.local\bin\claude.exe" -Force`。若竟报文件被锁（全新安装本不该出现，说明有旧残留正被某个会话占用），告知用户关闭相关会话后重试
@@ -141,7 +172,7 @@ Invoke-WebRequest "https://downloads.claude.ai/claude-code-releases/$ver/win32-x
 
 ## 从 npm 迁移到原生
 
-前半段同上。额外步骤：
+前半段同上，**变更总结通常跳过**（迁移前后版本一致，无区间可总结）。额外步骤：
 
 1. 复制到 `.local\bin\claude.exe`。
 2. `.claude.json` 中 `"installMethod": "global"` 字符串替换为 `"native"`（写回用 UTF-8 无 BOM）。
@@ -165,3 +196,7 @@ Invoke-WebRequest "https://downloads.claude.ai/claude-code-releases/$ver/win32-x
 | 全新安装也照更新流程生成交棒脚本等用户执行 | 全新安装目标位置无文件锁，会话内直接部署即可；盲目交棒徒增用户操作 |
 | 为写 `installMethod` 整文件覆盖 `.claude.json` | 该文件含登录态与用户配置，必须保留原内容只改这一个键 |
 | 跳过代理自动检测直接问用户 | 系统通常已配好代理（环境变量/系统设置/本地端口），直接问多一轮无意义交互；按第 0 步三级检测，全部失败再问 |
+| 交棒后才想起做变更总结 | 会话已结束，等用户替换完已无人可执行；总结必须在 🔴 CHECKPOINT 之前完成 |
+| 凭训练数据里的记忆写变更条目 | 记忆中的版本信息与实际 CHANGELOG 常不符，会写出根本不存在的变更；一律回原文取 |
+| 用窄关键词抽查、据此否定子 agent 的条目 | 会把真实条目误判成编造（窄词 `non-UTF-8` 漏掉原文 `not valid UTF-8`）；抽查一律放宽关键词 |
+| 影响分析时顺手改 `.claude.json` | 分析阶段只读；该文件含登录态，任何写入都只应是迁移/全新安装所需的 `installMethod` 单键改动 |
