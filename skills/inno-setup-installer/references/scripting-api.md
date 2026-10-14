@@ -13,7 +13,8 @@
 ## 常用签名（Inno Setup 6.7.x）
 
 ```pascal
-// 下载。文件落在 {tmp}\<BaseName>（BaseName 只接受文件名，不能带路径）；返回字节数。
+// 裸下载（**下大文件请用下面的下载页** —— 这个函数下载期间不处理消息，界面会假死）。
+// 文件落在 {tmp}\<BaseName>（BaseName 只接受文件名，不能带路径）；返回字节数。
 // 第 3 个参数传 SHA-256 就自动校验，内容对不上直接抛异常（这是清单驱动下载最省事的校验方式）。
 // 没有自定义请求头/超时参数。
 function DownloadTemporaryFile(const Url, BaseName, RequiredSHA256OfFile: String;
@@ -30,6 +31,24 @@ function CreateOutputProgressPage(const ACaption, ADescription: String): TOutput
 //   procedure Show;  procedure Hide;
 //   procedure SetText(const Msg1, Msg2: String);
 //   procedure SetProgress(const Position, Max: Longint);
+
+// ★ 下载页（6.3+）。**下大文件优先用它**：自带进度条 / 速度 / 剩余时间 / 中止按钮，
+//   且 Download 在处理消息循环里跑 —— 界面不假死。第 3 个参数是进度回调，不需要就传 nil。
+function CreateDownloadPage(const ACaption, ADescription: String;
+  const OnDownloadProgress: TOnDownloadProgress): TDownloadWizardPage;
+// TDownloadWizardPage 继承 TOutputProgressWizardPage（上面那四个方法都有），另有：
+//   function Add(const Url, BaseName, RequiredSHA256OfFile: String): NativeInt;
+//     // BaseName 只接受文件名（不能带路径），文件落在 {tmp}\<BaseName>
+//     // RequiredSHA256OfFile 传 SHA-256 就自动校验、对不上直接抛异常；传空串即不校验
+//   function AddEx(const Url, BaseName, RequiredSHA256OfFile, UserName, Password: String): NativeInt;
+//     // 需要认证的源站用这个
+//   function AddWithISSigVerify(const Url, ISSigUrl, BaseName: String;
+//     const AllowedKeysRuntimeIDs: TStringList): NativeInt;   // 签名会变时用，配 [ISSigKeys]
+//   procedure Clear;                         // 清空下载队列
+//   function Download: Int64;                // 下队列里的全部文件；返回字节数
+//   property AbortedByUser: Boolean; read;   // Download 返回后查它，区分「用户中止」与「真出错」
+//   property AbortButton: TNewButton; read;
+//   property ShowBaseNameInsteadOfUrl: Boolean; read write;
 
 // 解压（依赖 [Setup] 的 ArchiveExtraction，至少要 enhanced/nopassword；full 才支持 7z.dll 认得的那批格式）。
 // 本技能没实测过它对 .tar.gz 的行为 —— 上游给 tar.gz 时走系统 tar.exe（见 cookbook §11）。
@@ -53,6 +72,89 @@ function WizardSilent: Boolean;          // /SILENT 或 /VERYSILENT
 function ExpandConstant(const S: String): String;
 procedure Log(const S: String);          // 写进 /LOG 的日志，排障全靠它
 ```
+
+## 下载：先分清「下载页」与「裸下载函数」
+
+| | `CreateDownloadPage`（下载页，6.3+） | `DownloadTemporaryFile`（裸函数） |
+|---|---|---|
+| 进度条 / 速度 / 剩余时间 | **自带** | 无，得自己用 `CreateOutputProgressPage` 画 |
+| 中止按钮 | **自带**（配 `AbortedByUser` 判断） | 无，只能靠进度回调返回 False |
+| 下载期间界面 | **保持响应**（跑在处理消息循环里） | 不处理消息，大包会**假死** |
+| 多文件 / 队列 | `Add` 排队，一次 `Download` 全下 | 自己写循环 |
+| 什么时候用 | **几十 MB 以上的载荷** | 单个小文件、已有自己的进度页、纯静默调用 |
+
+判断标准就是**包的大小**：几百 KB 用哪个都行，几十上百 MB 必须用下载页 ——
+否则用户看到的是一个点了没反应的安装程序，然后去点关闭。
+
+> 曾有说法认为 `TDownloadWizardPage` 是「6.3 之前手搭向导页的老办法」，那是把它和自己
+> `CreateCustomPage` 加控件、手工算进度混为一谈了 —— **手搭的是后者，不是 `CreateDownloadPage`**。
+> 后者是官方 API，本技能捆绑的 `assets/CodeDependencies.iss` 下依赖用的就是它。
+
+### 能过编译的样例（本技能实测：ISCC 退出码 0）
+
+下载页在**向导存在时**建（`InitializeWizard`）；`Download` 在哪调取决于流程 ——
+交互路径挂 `NextButtonClick`，静默安装也要跑的路径挂 `CurStepChanged(ssInstall)`。两种都能过编译。
+
+```pascal
+var
+  DownloadPage: TDownloadWizardPage;
+
+procedure InitializeWizard;
+begin
+  DownloadPage := CreateDownloadPage('正在下载更新', '请稍候，正在获取最新版本…', nil);
+  DownloadPage.ShowBaseNameInsteadOfUrl := True;
+end;
+
+// 路径一：交互式向导里下（用户点了「下一步」）
+function NextButtonClick(CurPageID: Integer): Boolean;
+begin
+  Result := True;
+  if CurPageID = wpReady then
+  begin
+    // 哈希来自清单，不要写死
+    DownloadPage.Add('https://dl.example.com/p/payload-3f2ac9b1d0e4.tar.gz', 'payload.tar.gz', ExpectedSHA256);
+    DownloadPage.Show;
+    try
+      try
+        DownloadPage.Download;
+      except
+        if DownloadPage.AbortedByUser then
+          Log('用户中止了下载。')
+        else
+          SuppressibleMsgBox(AddPeriod(GetExceptionMessage), mbCriticalError, MB_OK, IDOK);
+        Result := False;
+      end;
+    finally
+      DownloadPage.Hide;
+    end;
+  end;
+end;
+
+// 路径二：静默安装也要跑的路径（清单驱动，见 cookbook §11-B）
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssInstall then
+  begin
+    DownloadPage.Add(PayloadUrl, 'payload.tar.gz', ExpectedSHA256);   // 可以排队多个
+    DownloadPage.Show;
+    try
+      DownloadPage.Download;
+    except
+      Log('下载失败，降级装基线版：' + GetExceptionMessage);
+    end;
+    DownloadPage.Hide;
+  end;
+end;
+```
+
+几条必须知道的：
+
+- **哈希从清单里读**传给 `Add` 第 3 个参数，别写死在脚本里 —— 写死 = 包一更新安装包就失效。
+  不需要校验时传空串（但要明白这是在放弃完整性校验，交付时讲清楚）。
+- `BaseName` **只能给文件名**（不能带路径），文件落在 `{tmp}\<BaseName>`。
+  想让进度条显示 URL 而不是文件名，设 `ShowBaseNameInsteadOfUrl := False`。
+- `Add` 只是排队，**不调 `Download` 不会下载** —— 跳过某次下载（比如已是最新版）就是不调它。
+- **静默安装下页面不显示，但 `Download` 照常执行**。别把关键逻辑挂在页面的可见性上。
 
 ## 事件与触发时机
 

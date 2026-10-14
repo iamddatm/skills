@@ -258,7 +258,7 @@ Source: "{#PayloadDir}/*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
 Type: filesandordirs; Name: "{app}\resources"
 
 [Code]
-// CurStepChanged(ssInstall)：读清单 → 比版本 → 下载（清单里的 sha256 交给 DownloadTemporaryFile 自动校验）
+// CurStepChanged(ssInstall)：读清单 → 比版本 → 下载（下载页见 scripting-api.md「下载」一节；清单里的 sha256 交给 Add 自动校验）
 // CurStepChanged(ssPostInstall)：解包覆盖 —— 必须晚于 [Files] 的拷贝，否则基线会把新文件盖回去
 ```
 
@@ -266,7 +266,7 @@ Type: filesandordirs; Name: "{app}\resources"
 
 1. **读清单用 `LoadStringsFromFile` + `StringJoin`** 拼成长串再做子串查找；别用 `LoadStringFromFile`（见 `scripting-api.md` 坑 2）。
 2. **比版本按段比整数**：`26.10.1.1` 大于 `26.9.1.1`，按字符串比会判反。相等或更低时**必须跳过**，否则会把已装好的新版**降级**。
-3. **校验用的哈希来自清单，不要写死在脚本里**：`DownloadTemporaryFile` 第 3 个参数传它，内容对不上直接抛异常，正好用 `try..except` 兜住降级。
+3. **校验用的哈希来自清单，不要写死在脚本里**：下载页的 `Add(Url, BaseName, RequiredSHA256OfFile)` 第 3 个参数传它，内容对不上直接抛异常，正好用 `try..except` 兜住降级。**下大包要用下载页而不是 `DownloadTemporaryFile`** —— 后者下载期间不处理消息，几十上百 MB 的包会让安装界面假死（见 `scripting-api.md` 的「下载」一节）。
 4. **解 `.tar.gz` 别指望 Inno**：`extractarchive` 只保证 `.7z/.zip/.rar`（用精简过的 7z.dll）。上游给的是 tar.gz 就用系统自带的 `{win}\System32\tar.exe`（bsdtar，Win10 1803 起随系统；而 Electron 这类框架本身就要 Win10 1809+，目标机必有）：`tar -xzf "<包>" -C "<安装目录>"`，**默认覆盖同名文件**、支持中文与空格路径（均实测）。路径钉 `{win}\System32` 而不是 `{sys}` —— 后者受 64 位安装模式影响，会解析到 SysWOW64。
 5. **钩子与顺序**：判断/下载挂 `ssInstall`（静默安装下也触发），解包挂 `ssPostInstall`。别挂 `NextButtonClick`，静默安装下不保证触发（证据见 `scripting-api.md` 的事件表）。
 6. **失败一律降级**：任何一步出问题都只写日志 + 在完成页写明「已安装基线版 vX，客户端启动后会提示升级」，让用户一眼知道装到的是哪一版。

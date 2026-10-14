@@ -162,7 +162,21 @@ Source: "https://download.example.com/client-latest.zip"; \
 - **覆盖不等于同步**：安装只会覆盖同名文件，旧版有、新版删掉的文件会残留在 `{app}` 里。要真正镜像新版内容，得先加 `[InstallDelete]` 清掉旧目录（详见 cookbook）。这一条是"覆盖式升级"最常见的翻车点。
 - URL 建议用 `#define` 抽出来（`Source: "{#PayloadUrl}"`），或在命令行用 `ISCC /DPayloadUrl=...` 传入，方便换环境。
 
-需要自定义下载逻辑时（URL 在编译期未知、文件名与哈希要从清单里读、多点回退），**别去手搭 `TDownloadWizardPage` 下载页**——那是 6.3 有原生下载之前的老办法，函数签名繁琐、很容易写出 `Invalid number of parameters`。用支撑函数 `DownloadTemporaryFile` 在 `CurStepChanged` 里直接下，三五行就够，进度条交给 `CreateOutputProgressPage`（签名与坑见 `references/scripting-api.md`）。
+需要自定义下载逻辑时（URL 在编译期未知、文件名与哈希要从清单里读、多点回退），用 Inno 官方的**下载页** `CreateDownloadPage`（6.3+，签名与样例见 `references/scripting-api.md`）：
+
+```pascal
+DownloadPage := CreateDownloadPage('正在下载更新', '请稍候…', nil);
+DownloadPage.Add(PayloadUrl, 'payload.tar.gz', ExpectedSHA256);   // 哈希来自清单，自动校验
+DownloadPage.Download;                                            // 跑在消息循环里
+```
+
+- 它**自带**进度条、下载速度、剩余时间与中止按钮，不用自己画；`AbortedByUser` 区分「用户中止」与「真出错」。
+- `Download` 在**处理消息循环**里运行，**窗口保持响应**。这是它相对 `DownloadTemporaryFile` 的关键差别：后者下载期间不处理消息，几十上百 MB 的包会让安装界面看着像卡死，用户会去点关闭。
+- 静默安装下页面不显示，但 `Download` 照常执行 —— 别把关键逻辑挂在页面的可见性上。
+
+**仍然不要「手搭」向导页**（自己 `CreateCustomPage` 再加一堆控件、手工算进度）——那才是 6.3 之前的老办法，函数签名繁琐、容易写出 `Invalid number of parameters`。`CreateDownloadPage` 是官方 API，不是手搭；本技能捆绑的 `assets/CodeDependencies.iss` 自己就是这么下依赖的。
+
+`DownloadTemporaryFile` 仍有位置：单个小文件、或已经有自己的进度页、或只想要一次静默调用。**判断标准是包的大小** —— 几百 KB 无所谓，几十 MB 就该换成下载页。
 
 ## 变体 B：混合（内置基线 + 安装时按清单拉增量）
 
@@ -184,6 +198,7 @@ Source: "https://download.example.com/client-latest.zip"; \
 2. 产物文件存在且体积合理（明显偏小说明 `[Files]` 的 `Source` 路径没匹配上——注意 `Source` 是相对 `.iss` 所在目录，不是当前工作目录）。
 3. `.iss` 里 `[Languages]` 挂的是中文文件、`[Tasks]` 那行没有 `unchecked`。
 4. **在线/混合形态另加一条**：按 `references/inno-script-cookbook.md` §13 用本机伪装的更新源，把「读清单 → 下载 → 校验 → 覆盖」真跑一遍，并断言「不需要更新」时装出来与基线逐文件哈希全等。联网逻辑没实测过就交付，等于把问题留给用户。
+   跑的时候**盯着安装界面看**：下载期间它必须保持响应（能拖窗口、进度条在动）。假死了就是用了裸 `DownloadTemporaryFile` 下大包 —— 换成 `CreateDownloadPage`。
 
 想更稳妥，可以在临时目录静默装一遍验证（会真的安装到系统，测试完记得卸载）：
 
