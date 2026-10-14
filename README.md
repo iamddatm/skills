@@ -21,6 +21,7 @@
 | [i-have-adhd](skills/i-have-adhd) | 面向 ADHD 读者的输出整形：先给下一步动作、多步任务编号、每轮复述进度、压掉岔题、让完成的成果可见 | 改编 | [i-have-adhd](https://github.com/ayghri/i-have-adhd) |
 | [inno-setup-installer](skills/inno-setup-installer) | 用 Inno Setup 把 Windows 程序打包成简体中文安装程序：生成 .iss 脚本、自动备好编译环境（缺 Inno Setup 时 winget 安装）、编译出 setup.exe，默认勾选创建桌面快捷方式，支持安装包联网下载最新文件覆盖安装，并经 InnoDependencyInstaller 自动补齐 .NET / VC++ 运行库 | 原创 | — |
 | [openai-image-gen](skills/openai-image-gen) | 通过 OpenAI 兼容图像端点(/v1/images)文生图与图生图:支持 new-api / sub2api 等网关,自带 Node / Python / PowerShell 三份等价零依赖脚本,支持参考图、mask 局部重绘与多尺寸 | 原创 | — |
+| [release-skill-authoring](skills/release-skill-authoring) | 为某个项目生成**或优化**它专属的发版技能（元技能）：数据库 up/down 迁移、后端 docker compose 停机更新与回滚、前端发布、客户端更新包/全量包、Inno Setup 安装包、更新清单与用户可感知的更新说明；发版前强制同步代码，发版后按份数清理本地残留（默认只演算）；优化已有技能时先 `--diff` 比对、再 `--adopt` 备份后重渲染；支持 Claude Code / Codex / Qoder / pi 多 Agent 落盘 | 原创 | — |
 | [wpf-stylet](skills/wpf-stylet) | WPF + Stylet MVVM 框架开发指南：生命周期、Conductor 导航、弹窗、命令绑定与依赖注入 | 原创 | — |
 
 ## 什么是技能？

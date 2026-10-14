@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iamddatm/skills/release-skill-authoring/manifest.schema.json",
+  "title": "更新清单（逻辑对象）",
+  "description": "描述的是**生成清单前的逻辑对象**（release-manifest.mjs 里那一个），不是落盘后的文件。落盘时清单被序列化成「一行一个键、无嵌套数组、纯 ASCII、所有值都带引号」的扁平文本，数字与布尔都会被转成字符串 —— 所以**不要**拿本 schema 去校验落盘的 manifest.json，类型对不上（那是刻意的，见 references/manifest-contract.md 约束 4）。物理格式由 scripts/engine/lib/flat-json.mjs 的 assertPascalParsable 强制，那份才是权威。",
+  "type": "object",
+  "required": ["schema", "channel", "version", "type", "file", "sha256", "size", "notes", "seq", "minVersion"],
+  "properties": {
+    "schema": { "type": "integer", "const": 1, "description": "清单结构版本。只增字段，永不删改。" },
+    "channel": { "type": "string", "examples": ["stable", "beta"] },
+    "releaseId": { "type": "string", "description": "本次发版唯一标识，用于幂等与归档。" },
+    "generatedAt": { "type": "string", "description": "ISO8601。**仅供展示，不参与任何判断**（客户端时钟不可信）。" },
+
+    "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+$", "description": "最新更新包版本 = 客户端对外版本号。" },
+    "type": { "type": "string", "const": "payload", "description": "顶层形态恒为 payload；全量信息放在 full* 与 full 块里。" },
+    "file": { "type": "string", "description": "更新包相对清单所在目录的路径（如 p/xxx.tar.gz）。文件名里的 hash 是随机 hash，不对账内容。" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "size": { "type": "integer", "minimum": 1 },
+    "notes": { "type": "string", "description": "面客更新说明。只写用户能感知的变化；不能含英文双引号（Pascal 侧无转义处理）。" },
+    "seq": { "type": "integer", "minimum": 1, "description": "单调递增发布序号。客户端拒绝 <= 本地的清单，防重放回滚。" },
+    "minVersion": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+$", "description": "低于此版本的客户端不得应用更新包，只能走全量/重装。" },
+
+    "fullFile": { "type": "string" },
+    "fullSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "fullSize": { "type": "integer", "minimum": 1 },
+    "reason": { "type": "string", "enum": ["runtime-deps", "structure", "assets", "manual", "unknown-baseline"] },
+    "full": {
+      "type": "object",
+      "description": "当前运行时基线对应的版本。**必须排在清单最后一行** —— Pascal 的 JsonStr 取第一个匹配键。",
+      "required": ["version"],
+      "properties": { "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+$" } }
+    },
+
+    "databaseVersion": { "type": "string" },
+    "databaseIrreversible": { "type": "boolean" },
+    "backendVersion": { "type": "string" },
+    "backendApiMinClient": { "type": "string", "description": "后端能接受的最老客户端版本 —— 兼容窗口的下沿。" },
+    "backendEndpointsRemoved": { "type": "string", "description": "本版移除的 API，逗号分隔或空。供人审计。" },
+    "frontendVersion": { "type": "string" },
+    "frontendFile": { "type": "string" },
+    "frontendSha256": { "type": "string" }
+  },
+  "additionalProperties": false
+}

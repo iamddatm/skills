@@ -1,0 +1,105 @@
+{
+  "schema": 1,
+  "project": {
+    "name": "{{PROJECT_NAME}}",
+    "slug": "{{SLUG}}",
+    "repoRoot": ".."
+  },
+  "components": {
+    "database": {
+      "enabled": {{COMPONENT_DATABASE_ENABLED}},
+      "globs": {{COMPONENT_DATABASE_GLOBS}}
+    },
+    "backend": {
+      "enabled": {{COMPONENT_BACKEND_ENABLED}},
+      "globs": {{COMPONENT_BACKEND_GLOBS}}
+    },
+    "frontend": {
+      "enabled": {{COMPONENT_FRONTEND_ENABLED}},
+      "globs": {{COMPONENT_FRONTEND_GLOBS}}
+    },
+    "client": {
+      "enabled": {{COMPONENT_CLIENT_ENABLED}},
+      "globs": {{COMPONENT_CLIENT_GLOBS}},
+      "businessGlobs": {{CLIENT_BUSINESS_GLOBS}},
+      "runtimeGlobs": {{CLIENT_RUNTIME_GLOBS}},
+      "structureGlobs": {{CLIENT_STRUCTURE_GLOBS}},
+      "buildOutputDir": "{{CLIENT_BUILD_OUTPUT_DIR}}",
+      "archive": "{{CLIENT_ARCHIVE}}",
+      "exeName": "{{CLIENT_EXE_NAME}}",
+      "updateExecutor": "{{CLIENT_UPDATE_EXECUTOR}}"
+    }
+  },
+  "version": {
+    "source": "{{VERSION_SOURCE}}",
+    "onlineManifest": "{{MANIFEST_URL}}"
+  },
+  "manifest": {
+    "baseUrl": "{{MANIFEST_BASE_URL}}",
+    "channel": "{{MANIFEST_CHANNEL}}",
+    "notesSource": "{{NOTES_SOURCE}}",
+    "fixedNamePaths": []
+  },
+  "release": {
+    "branch": "{{RELEASE_BRANCH}}",
+    "defaultBranch": "{{DEFAULT_BRANCH}}",
+    "tagPrefix": "v",
+    "stopWindow": "{{STOP_WINDOW}}",
+    "backwardCompatVersions": {{BACKWARD_COMPAT_VERSIONS}},
+    "backwardCompatDays": {{BACKWARD_COMPAT_DAYS}},
+    "checkpoints": "{{RELEASE_CHECKPOINTS}}",
+    "confirmedBy": "{{CONFIRMED_BY}}",
+    "pendingConfirmations": [],
+    "retention": {
+      "localDistVersions": 1,
+      "localHistoryVersions": 5,
+      "localPayloadFilelists": 2,
+      "skillBackups": 2
+    }
+  },
+  "database": {
+    "strategy": "{{DB_STRATEGY}}",
+    "migrationsDir": "{{DB_MIGRATIONS_DIR}}",
+    "backupDir": "{{DB_BACKUP_DIR}}",
+    "connectionEnv": "{{DB_CONNECTION_ENV}}",
+    "backupCommand": "{{DB_BACKUP_COMMAND}}",
+    "execCommand": "{{DB_EXEC_COMMAND}}",
+    "restoreCommand": "{{DB_RESTORE_COMMAND}}"
+  },
+  "frontend": {
+    "mode": "{{FRONTEND_MODE}}",
+    "buildCommand": "{{FRONTEND_BUILD_COMMAND}}",
+    "outputDir": "{{FRONTEND_OUTPUT_DIR}}",
+    "url": "{{FRONTEND_URL}}",
+    "publishTarget": "{{FRONTEND_PUBLISH_TARGET}}"
+  },
+  "backend": {
+    "composeFile": "{{COMPOSE_FILE}}",
+    "services": {{COMPOSE_SERVICES}},
+    "singleFileMountServices": {{COMPOSE_SINGLE_FILE_MOUNTS}},
+    "persistentDirs": {{COMPOSE_PERSISTENT_DIRS}}
+  },
+  "deploy": {
+    "hostEnv": "{{DEPLOY_HOST_ENV}}",
+    "keyEnv": "{{DEPLOY_KEY_ENV}}",
+    "appDir": "{{DEPLOY_APP_DIR}}",
+    "healthcheckUrl": "{{HEALTHCHECK_URL}}"
+  },
+  "installer": {
+    "dir": "{{INSTALLER_DIR}}",
+    "innoSkillDir": "{{INNO_SKILL_DIR}}",
+    "payloadVersionCommand": "{{INSTALLER_VERSION_COMMAND}}"
+  },
+  "paths": {
+    "releaseDir": "release",
+    "distDir": "release/dist"
+  },
+  "commands": {
+    "build": {{BUILD_COMMANDS}}
+  },
+  "agents": {
+    "repoTargets": {{AGENT_REPO_TARGETS}},
+    "userTargets": {{AGENT_USER_TARGETS}}
+  },
+  "engineVersion": "{{ENGINE_VERSION}}"
+}

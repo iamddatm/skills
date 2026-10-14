@@ -1,0 +1,196 @@
+---
+name: {{SLUG}}-release
+description: '{{PROJECT_NAME}} 发版：{{#if DATABASE_ENABLED}}数据库迁移、{{/if}}后端 docker compose 上线、{{#if FRONTEND_ENABLED}}前端发布、{{/if}}{{#if CLIENT_ENABLED}}客户端更新包/全量包产出与清单更新、安装包构建、{{/if}}版本号与更新说明。用户提到「{{PROJECT_NAME}} 发版」「发版」「上线」「部署」{{#if DATABASE_ENABLED}}「数据库迁移」{{/if}}{{#if CLIENT_ENABLED}}「更新后端」「推客户端更新包」「发布新版本」{{/if}}时使用。'
+---
+
+# {{PROJECT_NAME}} 发版
+
+**违反规则的字面含义,就是违反规则的精神。**
+
+组件与命令都在 `release.config.json` 里，本文件不再重复；改参数**只改那一份**。
+
+> **本文件里的命令一律在技能目录下执行**（就是本文件所在目录）。
+> 指向项目根的一律写 `{{REPO_REL}}/` —— 本技能在 `.claude/skills/` 下，不在仓库根，
+> 层级比直觉多一层。这个值是渲染时按实际位置算出来的，别凭感觉数。
+
+{{#if PENDING_CONFIRMATIONS}}
+> 🔴 **本技能尚未「就绪」**：`PENDING-CONFIRMATIONS.md` 里列着生成时无法确认、按假定填的参数。
+> **首次发版前必须逐条与用户核对并改 `release.config.json`**，否则发出去的东西可能与预期不符。
+{{/if}}
+
+## 组件地图
+
+| 组件 | 版本来源 | 产物 | 部署目标 |
+|---|---|---|---|
+{{#if DATABASE_ENABLED}}| database | `{{DB_MIGRATIONS_DIR}}` 的迁移版本 | up/down 脚本 | 数据库 |
+{{/if}}| backend | `{{VERSION_SOURCE}}` | 镜像 / 源码包 | `{{DEPLOY_HOST_ENV}}` 的 `{{DEPLOY_APP_DIR}}` |
+{{#if FRONTEND_ENABLED}}| frontend | 同上 | 静态产物 | {{FRONTEND_MODE}} |
+{{/if}}{{#if CLIENT_ENABLED}}| client | **更新包版本**（客户端对外版本号） | 更新包 + 全量包 | 静态站 `{{MANIFEST_DIR}}/`（清单 `{{MANIFEST_URL}}`） |
+| installer | 同客户端版本 | `setup.exe` | 只给新用户 |
+{{/if}}
+引擎脚本在 `scripts/engine/`，**不要手改**：它整块由生成这份技能的元技能（`release-skill-authoring`）维护，
+升级要回那边跑 `release-scaffold.mjs --update-engine` —— 本技能目录里没有那个脚本。
+本技能需要整体改进（换参数、补新能力、把下面踩过的坑固化）时同理：先 `--diff` 看会改什么，再 `--adopt` 备份后重渲染。
+项目专属包装在 `scripts/`，那些是可以改的。
+
+## 阶段 0 预检（不满足就别往下走）
+
+```bash
+git branch --show-current          # 必须是 {{RELEASE_BRANCH}}
+git fetch origin
+git status -sb                     # 首行带 [behind N] 就必须先合并
+git log --oneline HEAD..origin/{{RELEASE_BRANCH}}
+```
+
+- **落后或有远端新提交 → 先合并再往下走。带着旧代码发版 = 发出一个漏了改动的包**，
+  而收到它的用户此后不会再收到那批改动（版本号已经前进）。
+- 合并纪律：逐段合并双方意图，**绝不整文件覆盖队友**；合并后重跑受影响的测试；判断不了就停下问。
+- 有未提交改动：先核对范围并备份，保留队友修改、不混入无关变更、**不自动 commit/push**。
+
+## 阶段 1 探测：这次要产出什么
+
+```bash
+node scripts/engine/release-changes.mjs --config {{REPO_REL}}/release/release.config.json --out {{REPO_REL}}/release/plan.json
+```
+
+🔴 **把输出念给用户确认**，再往下走。它会给出构建矩阵（哪些组件要重建{{#if CLIENT_ENABLED}}、要不要出全量包{{/if}}）以及每个判定的依据。
+说不通就用 `--force <组件>` / `--force-full` 覆盖。
+
+## 阶段 2 兼容窗口（🔴 门禁）
+
+```bash
+# 看本次后端与迁移的改动面
+git diff --stat $(git describe --tags --abbrev=0)..HEAD -- {{COMPONENT_BACKEND_GLOBS_SHELL}}
+```
+
+后端有「移除 API / 改签名」{{#if DATABASE_ENABLED}}或不可逆迁移{{/if}}时，**必须**上抬最低支持版本，
+并说明哪些客户端会受影响。兼容窗口：`{{BACKWARD_COMPAT_VERSIONS}}` 个版本 / `{{BACKWARD_COMPAT_DAYS}}` 天，取较大者。
+{{#if CLIENT_ENABLED}}客户端装出去收不回来 —— 见 `references/client.md`。{{/if}}
+
+## 阶段 3 版本计算
+
+```bash
+NEXT=$(node scripts/engine/release-version.mjs --config {{REPO_REL}}/release/release.config.json --print)
+echo "$NEXT"
+```
+
+基准取「线上清单 / 本地状态 / `--base`」三者最大，保证严格大于线上。读不到线上又没给
+`--base` 会直接报错 —— **不要用落后的本地号硬发**。
+（`--print` 只把裸版本号打到 stdout，提示走 stderr，可以放心用 `$(...)` 捕获。
+**本阶段只取号、不写状态**：`release-state.json` 的 `versions.client` 是「**上次已发布**版本」，
+阶段 7 的同版本守卫拿它比较；被取号步骤先占掉的话，守卫就变成拿新号跟新号比，恒报「同版本禁止重发」。
+那个槽位由阶段 7 清单**发布成功**时写入 —— 这是它唯一的写入者。）
+
+{{#if DATABASE_ENABLED}}## 阶段 4 数据库
+
+```bash
+pwsh -NoProfile -File scripts/migrate.ps1 -Direction Up
+```
+
+顺序固定：**备份 → 迁移 → 记录**。不可逆迁移需 `-AllowIrreversible` + 已验证的备份产物。
+细节与破坏性变更的两步法见 `references/database.md`。
+
+{{/if}}## 阶段 5 构建
+
+```bash
+{{BUILD_COMMANDS}}
+```
+
+## 阶段 6 打包
+
+{{#if CLIENT_ENABLED}}```bash
+# 更新包（业务文件全集 + 删除清单）
+node scripts/engine/release-package.mjs --config {{REPO_REL}}/release/release.config.json \
+  --source {{REPO_REL}}/{{CLIENT_BUILD_OUTPUT_DIR}} --kind payload \
+  --out {{REPO_REL}}/release/dist/{{SLUG}}-payload{{CLIENT_ARCHIVE_EXT}} \
+  --artifacts {{REPO_REL}}/release/artifacts.json
+
+# 全量包（仅当阶段 1 判定需要）
+node scripts/engine/release-package.mjs --config {{REPO_REL}}/release/release.config.json \
+  --source {{REPO_REL}}/{{CLIENT_BUILD_OUTPUT_DIR}} --kind full \
+  --out {{REPO_REL}}/release/dist/{{SLUG}}-full{{CLIENT_ARCHIVE_EXT}} \
+  --artifacts {{REPO_REL}}/release/artifacts.json
+```
+
+分类是 **fail-closed** 的：出现既不属于业务、也不属于运行时的文件会**直接失败**。
+这是刻意的 —— 分类不全意味着某些文件永远不会被更新，而它不会报错。
+
+安装包（仅当判定需要，且必须在客户端构建之后）：
+
+```bash
+pwsh -NoProfile -File scripts/build-installer.ps1
+```
+{{/if}}
+{{#if CLIENT_ENABLED}}## 阶段 7 生成清单并发布
+
+```bash
+node scripts/engine/release-manifest.mjs --config {{REPO_REL}}/release/release.config.json \
+  --artifacts {{REPO_REL}}/release/artifacts.json --version "$NEXT" --notes '<用户可感知的更新说明>'
+```
+
+🔴 **`--notes` 必须先摆给用户确认**。它就是要显示在客户端更新卡片上的那几行字，
+不写、或写「重构/文档」这类内部改动，都是在让用户看垃圾。
+
+它同时会产出 `publish-plan.json`：`source → published` 的映射。
+**上传就照它走** —— 发布文件名带随机 hash，是这一步才定下来的，不要自己拼。
+
+**发布顺序不可颠倒：先上传所有包，最后上传清单。** 清单是「最新是谁」的唯一指针。
+{{/if}}
+## 阶段 8 部署与验收
+
+```bash
+pwsh -NoProfile -File scripts/deploy-backend.ps1
+{{#if CLIENT_ENABLED}}node scripts/engine/release-verify.mjs --config {{REPO_REL}}/release/release.config.json --check-sha
+{{/if}}```
+
+`deploy-backend.ps1` 健康检查失败会自动回滚并返回非 0。
+{{#if CLIENT_ENABLED}}`release-verify.mjs` 检查清单可达、可被安装包解析、每个包下得到且哈希一致、缓存头正确。{{/if}}
+
+## 阶段 9 收尾
+
+- 打 `v<版本>` 标签（**每轮必打**，否则下一轮的 diff 基准失效）；
+- 把这一版实际写进去的更新说明**逐条回报给用户**；
+- 提交 `{{REPO_REL}}/release/release-state.json`；
+- **清理本地残留**（保留最新一轮，删掉旧的构建产物与归档）：
+
+```bash
+node scripts/engine/release-prune.mjs --config {{REPO_REL}}/release/release.config.json          # 先演算
+node scripts/engine/release-prune.mjs --config {{REPO_REL}}/release/release.config.json --apply  # 确认后真删
+```
+
+{{#if CLIENT_ENABLED}}清理**必须在清单上传成功、线上体检通过之后**做 —— 提前删就发不出去了。{{/if}}
+{{#unless CLIENT_ENABLED}}清理**必须在本次发版确认成功之后**做 —— 提前删就发不出去了。{{/unless}}
+细节与红线见 `references/retention.md`。
+
+```bash
+git add -A && git commit -m '{{#if CLIENT_ENABLED}}客户端 {{/if}}v<版本>：<一句话>'
+```
+
+**push 与推标签都是对外动作，动手前必须用户确认。**
+
+## 回滚
+
+见 `references/rollback.md`。一句话版本：服务端可回滚（旧镜像 digest / 备份 tar）{{#if CLIENT_ENABLED}}，
+**客户端只能前滚**（用旧代码打更高版本号重发）{{/if}}。
+
+## 红线
+
+- 不在主分支上手工提交；主分支只接受快进合并
+- 不跳过阶段 0 的代码同步
+{{#if CLIENT_ENABLED}}- 不省略更新说明，不用 git 提交标题兜底
+{{/if}}- 不手工改 `scripts/engine/`（升级走 `--update-engine`）
+- 不把凭据、私钥、token 写进任何产物或配置
+{{#if CLIENT_ENABLED}}- 不删除线上已发布的全量包（它是停在旧基线的客户端唯一的升级路径）
+- 不改小版本号（客户端只认更高的）
+- 不在没跑 `release-verify.mjs` 的情况下说「发版成功」
+- 不在清单上传与线上体检通过之前清理本地或线上产物
+{{/if}}{{#unless CLIENT_ENABLED}}- 不在本次发版确认成功之前清理本地或线上产物
+{{/unless}}
+
+## 参考
+
+`references/runbook.md`（本项目九阶段的完整命令与门禁）、`references/rollback.md`
+{{#if DATABASE_ENABLED}}、`references/database.md`{{/if}}、`references/backend.md`
+{{#if FRONTEND_ENABLED}}、`references/frontend.md`{{/if}}{{#if CLIENT_ENABLED}}、`references/client.md`{{/if}}；
+通用契约见 {{#if CLIENT_ENABLED}}`references/manifest-contract.md` / `references/payload-rules.md` /
+`references/client-update-protocol.md`、{{/if}}`references/multi-agent-layout.md` / `references/retention.md`。

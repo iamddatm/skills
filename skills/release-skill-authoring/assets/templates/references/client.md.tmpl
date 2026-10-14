@@ -1,0 +1,86 @@
+# 客户端更新（{{PROJECT_NAME}}）
+
+## 本项目参数
+
+| 项 | 值 |
+|---|---|
+| 产物目录 | `{{CLIENT_BUILD_OUTPUT_DIR}}` |
+| 主程序 | `{{CLIENT_EXE_NAME}}` |
+| 归档格式 | `{{CLIENT_ARCHIVE}}` |
+| 更新执行方式 | `{{CLIENT_UPDATE_EXECUTOR}}` |
+| 业务文件 glob | `{{CLIENT_BUSINESS_GLOBS}}` |
+| 运行时文件 glob | `{{CLIENT_RUNTIME_GLOBS}}` |
+| 结构变更 glob | `{{CLIENT_STRUCTURE_GLOBS}}` |
+| 兼容窗口 | {{BACKWARD_COMPAT_VERSIONS}} 个版本 / {{BACKWARD_COMPAT_DAYS}} 天，取较大者 |
+
+## 两种包的分工
+
+| | 更新包 | 全量包 |
+|---|---|---|
+| 内容 | **业务文件全集**（不是差分） | 整个程序目录（含运行时本体） |
+| 形态 | 归档，覆盖式解压 | 自包含绿色包，解压即用 |
+| 给谁 | 已装客户端自动更新 | 已装客户端跨基线更新 |
+| 何时发 | 客户端目录有变更时 | 运行时/依赖/目录结构变更时 |
+
+Inno 安装包**只给新用户**，不参与自动更新。三者版本一致、角色不同，别混用。
+
+## 分类是 fail-closed 的
+
+打包脚本会列出产物目录里的**全部**文件，逐个分类为 business / runtime，
+**出现未分类文件直接让发版失败**。
+
+这不是刁难：分类不全意味着某个文件永远不会被更新，客户端长期停在旧代码上，
+**不报错、不告警**，直到某个功能行为不一致才被发现。遇到了就把该文件归到
+`businessGlobs` 或 `runtimeGlobs`（改 `release.config.json`），别用 `--allow-unclassified` 糊过去。
+
+## 全量触发方向不能反
+
+读不到基线、状态文件缺失、解析失败时**一律按全量处理**：
+
+> 全量对客户端永远安全（代价是一次性下载），猜成只发更新包可能让客户端启动即崩。
+
+触发来源：运行时/依赖 glob 命中（`runtime-deps`）、业务目录新增目录（`structure`）、
+结构 glob 命中（`assets`）、基线不可知（`unknown-baseline`）、`--force-full`（`manual`）。
+
+## 客户端侧协议
+
+完整状态机见 `client-update-protocol.md`。本项目要落实的几条：
+
+- 本地记**两个**版本：`version`（更新包版本）与 `fullBaseline`（运行时基线）；
+- 判据按段比整数，相等或更低**一律跳过**（否则就是降级）；
+- **先全量、后更新包**，全量完成后**重启**再从头走一遍状态机；
+- 清单位于 `{{MANIFEST_URL}}`，拉取时叠 `?t=<unix>`；
+- 拉取失败 → 脱机启动（提示「暂时无法检查更新」），4 小时后再试，**不要阻断用户使用**。
+
+## 更新执行（`{{CLIENT_UPDATE_EXECUTOR}}`）
+
+- **独立 updater**：`updater.exe` 放在 `%LOCALAPPDATA%\<App>\updater\`，**在被替换目录之外**；
+  主程序下载校验后退出，由它执行替换再拉起主程序。
+  - updater 替换自身：改名为 `.old` → 新 updater 下次启动时删除；
+  - 主程序 exe/dll 被占用：目录改名交换，或 `MoveFileEx(MOVEFILE_DELAY_UNTIL_REBOOT)`。
+- 失败一律回滚：强制「下载校验 → 备份 → 替换 → 失败还原」，主程序连续三次崩溃也触发还原。
+
+## 删除清单
+
+更新包附带 `.delete.json`（相对路径列表），客户端解包后按它删除 ——
+全集覆盖解决不了「被删掉的文件」，旧客户端上它还在，可能被加载执行。
+
+## 客户端不可回滚
+
+装出去的版本收不回来。所以后端必须向后兼容 {{BACKWARD_COMPAT_VERSIONS}} 个客户端版本 /
+{{BACKWARD_COMPAT_DAYS}} 天（取较大者）：
+
+- 清单里的 `backendApiMinClient` 是后端能接受的最老客户端版本；
+- 后端有破坏性变更时**必须**上抬 `minVersion`，并说明受影响范围；
+- 客户端只会在 `local.version < minVersion` 时停止走更新包路径，转向全量/重装提示。
+
+## 安装包（新用户）
+
+`scripts/build-installer.ps1` 调 inno-setup-installer 生成。三条硬约束：
+
+- `VersionInfoVersion` 纯数字四段；`AppId` 发布后不可改；
+- **安装目录必须可写**（`PrivilegesRequired=lowest` + `{autopf}`），否则覆盖式自动更新写不进去；
+- 安装完成时在 `ssPostInstall` 落 `version.json` + `update-state.json`
+  （`version` = `fullBaseline` = 安装包版本）—— 否则新用户会被当成 UNKNOWN 而强制全量。
+
+安装包在线覆盖的文件不在 Inno 的安装清单里，卸载不会自动清，必须用 `[UninstallDelete]`。

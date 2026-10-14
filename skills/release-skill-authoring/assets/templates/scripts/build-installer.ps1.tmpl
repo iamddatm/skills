@@ -1,0 +1,105 @@
+<#
+.SYNOPSIS
+  {{PROJECT_NAME}} 客户端安装包：写 build-config.iss → 调 inno-setup-installer 编译。
+
+.DESCRIPTION
+  本脚本是**薄包装**：真正干活的是 inno-setup-installer 技能的 build-installer.ps1
+  （它负责找/装 ISCC、校验版本、补 BOM、编译、解析产物）。
+
+  这里只做三件项目相关的事：
+    1. 从已构建产物读出安装包版本（不要从单独的版本文件读，容易与产物漂移）；
+    2. 把版本号、载荷目录、更新地址写进 build-config.iss；
+    3. 调 inno 技能编译。
+
+  ⚠️ 本文件是**渲染出来的生成物**，改了下次重渲染就没了 —— 要改请改元技能
+     `release-skill-authoring` 的模板。三条来自 inno 技能的硬约束：
+       · VersionInfoVersion 只接受纯数字四段，后缀要先剥掉；
+       · AppId 一旦发布过就不能改；
+       · 安装目录必须可写（PrivilegesRequired=lowest + {autopf}），
+         否则覆盖式自动更新在写入阶段会失败。
+
+.PARAMETER Version
+  本次版本号（四段）。省略则从已构建产物读。
+
+.PARAMETER PayloadDir
+  安装包内置的完整基线目录。
+
+.PARAMETER Compression
+  Inno 压缩档位。分发给用户用 max；开发期反复打包用 fast。
+
+.PARAMETER UpdateBase
+  覆盖安装时读取更新清单的基地址。**只给本机伪源验证用**（verify-installer.ps1 会指向
+  http://127.0.0.1:<port>）；正式分包不要传，用它会把线上地址烧进安装包。
+#>
+param(
+    [string]$Version,
+    [string]$PayloadDir = '{{CLIENT_BUILD_OUTPUT_DIR}}',
+    [ValidateSet('none', 'fast', 'normal', 'max')][string]$Compression = 'max',
+    [string]$UpdateBase
+)
+
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSVersion.Major -lt 6) { throw '请使用 PowerShell 7：pwsh -File' }
+
+# 本脚本在 <项目>/.claude/skills/<slug>-release/scripts/ 下，不在仓库根 ——
+# 层级由脚手架按实际位置算出来，不要手写
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '{{REPO_REL_FROM_SCRIPTS}}')).Path
+$installerDir = Join-Path $repoRoot '{{INSTALLER_DIR}}'
+$payloadFull = Join-Path $repoRoot $PayloadDir
+if (-not (Test-Path -LiteralPath $payloadFull)) {
+    throw "找不到载荷目录：$payloadFull —— 先构建客户端再打安装包。"
+}
+
+# ---- 版本号：优先从已构建产物读（打进包的那份才是事实）----
+#
+# 读取方式是**命令模板**，放在 release.config.json 的 installer.payloadVersionCommand 里，
+# 不烘进本脚本：版本号藏在哪儿各项目差别很大（exe 的 VersionInfo、Electron 的 package.json、
+# `--version` 输出），写死一种就等于「换个项目先改脚本」。变量 $payloadFull 对模板可见。
+if (-not $Version) {
+    $configPath = Join-Path $repoRoot 'release/release.config.json'
+    if (-not (Test-Path -LiteralPath $configPath)) { throw "找不到配置：$configPath" }
+    $versionTemplate = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).installer.payloadVersionCommand
+    if (-not $versionTemplate) { throw '配置里缺 installer.payloadVersionCommand。见 references/versions.md。' }
+    Write-Host "    读取版本：$versionTemplate" -ForegroundColor DarkGray
+    $Version = "$(Invoke-Expression $versionTemplate)".Trim()
+}
+if ($Version -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+    throw "版本号必须是纯数字四段（VersionInfoVersion 的要求），收到：$Version"
+}
+
+# ---- 写 build-config.iss（每次编译前重写，不要手改）----
+$buildConfig = Join-Path $installerDir 'build-config.iss'
+# 正式分包固定用线上地址；只有本机伪源验证才允许覆盖
+# UpdateBase 必须是**通道目录**（安装包侧自己会拼 `/manifest.json`）—— 见 assets/inno/pascal-fragment.iss
+#
+# ⚠️ 结果变量叫 $resolvedUpdateBase，**不能**叫 $updateBase：PowerShell 的变量名大小写不敏感，
+#    那与参数 $UpdateBase 是同一个变量 —— 赋值之后它恒为真，于是下面那条「只应用于本机验证」
+#    的警告在**正式分包时也会打出来**，把一个正常构建说得像在做伪源测试。
+$resolvedUpdateBase = if ($UpdateBase) { $UpdateBase } else { '{{MANIFEST_DIR}}' }
+if ($UpdateBase) {
+    Write-Host "⚠ 本次把更新源指向 $resolvedUpdateBase（只应用于本机验证，别拿去分发）" -ForegroundColor Yellow
+}
+@"
+; 本文件由 build-installer.ps1 生成，不要手工编辑
+#define AppVersion "$Version"
+#define PayloadDir "$($payloadFull -replace '\\', '/')"
+#define UpdateBase "$resolvedUpdateBase"
+#define Compression "$Compression"
+#define SolidCompression "yes"
+"@ | Set-Content -LiteralPath $buildConfig -Encoding utf8NoBOM
+Write-Host "已写 $buildConfig（版本 $Version）" -ForegroundColor DarkGray
+
+# ---- 调 inno-setup-installer 编译（它就在那个技能目录下，与 SKILL.md 同级）----
+$innoSkill = '{{INNO_SKILL_DIR}}'
+$buildScript = Join-Path $innoSkill 'scripts/build-installer.ps1'
+if (-not (Test-Path -LiteralPath $buildScript)) {
+    throw "找不到 inno-setup-installer 的构建脚本：$buildScript`n先安装该技能（npx skills add iamddatm/skills --skill inno-setup-installer）。"
+}
+
+pwsh -NoProfile -File $buildScript -Script (Join-Path $installerDir 'setup.iss')
+if ($LASTEXITCODE -ne 0) { throw "安装包编译失败（退出码 $LASTEXITCODE）。" }
+
+# ---- 安装包只给新用户，与全量包角色分开；发布用固定名还是带哈希名由项目定 ----
+Write-Host '安装包编译完成。' -ForegroundColor Green
+Write-Host '提醒：安装包是给新用户首次安装用的，不参与客户端自动更新（那是全量包的事）。' -ForegroundColor DarkGray

@@ -1,0 +1,61 @@
+# 数据库迁移（{{PROJECT_NAME}}）
+
+## 本项目的位置与工具
+
+| 项 | 值 |
+|---|---|
+| 迁移目录 | `{{DB_MIGRATIONS_DIR}}` |
+| 策略 | `{{DB_STRATEGY}}`（up/down 双向脚本） |
+| 备份目录 | `{{DB_BACKUP_DIR}}`（**不要**放进迁移目录，否则会被当成待执行的迁移） |
+| 备份/执行命令 | 见 `scripts/migrate.ps1` 里的 `{{DB_BACKUP_COMMAND}}` / `{{DB_EXEC_COMMAND}}` |
+| 连接串 | 环境变量 `{{DB_CONNECTION_ENV}}`（**不入库、不写进配置**） |
+
+## 命名与可逆性
+
+```
+<版本>.up.sql      例如 2026.10.14.1_add_export_flag.up.sql
+<版本>.down.sql
+```
+
+不可逆的迁移在**脚本头部 20 行内**写 `-- irreversible: true`，`migrate.ps1` 会据此设门禁。
+
+## 命令
+
+```bash
+# 只备份（发版前单独确认备份可用）
+pwsh -NoProfile -File scripts/migrate.ps1 -BackupOnly
+
+# 升到最新
+pwsh -NoProfile -File scripts/migrate.ps1 -Direction Up
+
+# 降到指定版本（仅在可逆时）
+pwsh -NoProfile -File scripts/migrate.ps1 -Direction Down -ToVersion 2026.10.14.1
+```
+
+## 窗口内的固定顺序
+
+```
+备份 → 迁移 → 后端镜像更新 → 健康检查
+```
+
+**备份在迁移之前**，且必须验证产物非空 —— 迁移失败时它是唯一能救回来的东西。
+`migrate.ps1` 会把备份文件名与 sha256 打进输出，**记下来**。
+
+## 破坏性变更走两步（expand/contract）
+
+`DROP COLUMN` 的 down 写得出来，但**数据已经丢了**。所以：
+
+| 发布 | 做什么 |
+|---|---|
+| N | 只做加法：加表/加列（可空）/加索引。旧列保留，新旧代码都能跑 |
+| N+1 | 代码切到新列，旧列停止写入 |
+| N+2 | 真正 `DROP`。此时最低支持版本已抬到不再依赖旧列 |
+
+不可逆迁移加 `-AllowIrreversible` 才能跑，且脚本会先校验备份存在。
+
+{{#if CLIENT_ENABLED}}## 与客户端的关系
+
+迁移必须对**上一版后端**向前兼容（回滚镜像时数据库回不去了）。这就是最低支持版本
+（`minVersion`）与 `backendApiMinClient` 存在的意义 —— 详见 `references/client.md`。
+
+{{/if}}

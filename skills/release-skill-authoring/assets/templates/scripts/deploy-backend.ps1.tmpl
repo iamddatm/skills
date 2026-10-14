@@ -1,0 +1,136 @@
+<#
+.SYNOPSIS
+  {{PROJECT_NAME}} 后端部署：备份 → 上传 → compose 更新 → 健康检查（失败则回滚）。
+
+.DESCRIPTION
+  停机窗口更新（用户已确认接受短暂停机）。顺序固定：
+
+      备份线上源码 → 上传 → 解包 → compose up -d → 健康检查
+
+  失败时自动回滚到发版前的备份，并把旧镜像 digest 重新拉起来。
+
+  **镜像按 digest 固定，不要用 latest**：latest 回滚不了（下次 up 还是拉到同一个 latest）。
+
+  **单文件只读挂载的坑**：nginx.conf 这类单文件挂载，解包后 inode 变了，
+  普通 `up -d` 不会重建容器，容器会一直用旧配置 —— 必须 `--force-recreate`。
+  本脚本对配置里 backend.singleFileMountServices 列出的服务自动加上这个参数。
+
+.PARAMETER DryRun
+  只打印将要执行的远端命令，不实际执行。
+
+.PARAMETER NoRollback
+  健康检查失败时不自动回滚（排障用；默认是回滚）。
+#>
+param(
+    [string]$ReleasePackage,
+    [switch]$DryRun,
+    [switch]$NoRollback
+)
+
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSVersion.Major -lt 6) { throw '请使用 PowerShell 7：pwsh -File' }
+
+# 本脚本在 <项目>/.claude/skills/<slug>-release/scripts/ 下，不在仓库根 ——
+# 层级由脚手架按实际位置算出来，不要手写
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '{{REPO_REL_FROM_SCRIPTS}}')).Path
+$releaseDir = Join-Path $repoRoot 'release'
+$statePath = Join-Path $releaseDir 'release-state.json'
+
+# ---- 远端连接：主机与私钥都从环境变量/参数来，**不入库** ----
+$remoteHost = $env:{{DEPLOY_HOST_ENV}}
+if (-not $remoteHost) { throw "缺少环境变量 {{DEPLOY_HOST_ENV}}（目标主机）。" }
+# 私钥属个人，由部署负责人单独交付；走 ssh-agent 时可省掉身份文件
+$sshKey = $env:{{DEPLOY_KEY_ENV}}
+$appDir = '{{DEPLOY_APP_DIR}}'
+$composeFile = '{{COMPOSE_FILE}}'
+$healthUrl = '{{HEALTHCHECK_URL}}'
+# 渲染值是 JSON 数组文本（如 ["nginx","worker"] 或 []），必须按 JSON 解析；
+# 按逗号 Split 会把方括号与引号留在服务名里，空数组还会生成名为 [] 的伪服务名传给 docker compose。
+$singleFileServices = @('{{COMPOSE_SINGLE_FILE_MOUNTS}}' | ConvertFrom-Json)
+
+# 远程操作一律用系统自带 OpenSSH（Windows 路径写死，避免 Git Bash 的同名工具改变行为）
+$ssh = Join-Path $env:SystemRoot 'System32/OpenSSH/ssh.exe'
+$scp = Join-Path $env:SystemRoot 'System32/OpenSSH/scp.exe'
+if (-not (Test-Path -LiteralPath $ssh)) { throw "找不到系统 ssh：$ssh" }
+$sshArgs = if ($sshKey) { @('-i', $sshKey, '-o', 'IdentitiesOnly=yes') } else { @() }
+
+function Invoke-Remote([string]$command) {
+    if ($DryRun) { Write-Host "[dry-run] ssh $remoteHost '$command'" -ForegroundColor DarkGray; return }
+    & $ssh @sshArgs -o BatchMode=yes -o ConnectTimeout=15 $remoteHost $command
+    if ($LASTEXITCODE -ne 0) { throw "远端命令失败（退出码 $LASTEXITCODE）：$command" }
+}
+
+# ---- 0 连接探活：连不上就别往下走 ----
+Invoke-Remote 'hostname && docker compose version'
+
+# ---- 1 记录当前镜像 digest（回滚要用）----
+$digestJson = if ($DryRun) { '{}' } else { & $ssh @sshArgs -o BatchMode=yes $remoteHost "cd $appDir && docker compose images --format json" }
+Write-Host "当前镜像：$digestJson" -ForegroundColor DarkGray
+
+# ---- 2 备份线上源码（出问题靠它回滚）----
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$backupRemote = "/root/{{SLUG}}-src-$stamp.tgz"
+Invoke-Remote "tar czf $backupRemote -C $appDir --exclude=./db/backups --exclude=./service-config --exclude=./update-files . && ls -lh $backupRemote"
+Write-Host "已备份：$backupRemote" -ForegroundColor Green
+
+# ---- 3 上传并解包 ----
+if ($ReleasePackage) {
+    if (-not $DryRun) {
+        # 必须写 ${remoteHost}: —— "$remoteHost:" 会被 PowerShell 当成作用域变量引用而报语法错
+        & $scp @sshArgs -o BatchMode=yes $ReleasePackage "${remoteHost}:/root/release.tgz"
+        if ($LASTEXITCODE -ne 0) { throw '上传失败。' }
+    }
+    Invoke-Remote "tar xzf /root/release.tgz -C $appDir"
+}
+
+# ---- 4 配置校验（单文件挂载改了配置时，配错会让容器 restart loop、对外 502）----
+# TODO: 项目若有单文件挂载的 nginx/反代配置，在这里先 nginx -t 验一遍
+#       （做法见元技能 release-skill-authoring 里的 server-release.md 参考文档，本技能目录里没有它）。
+
+# ---- 5 起服务 ----
+# 单文件挂载的服务要 --force-recreate：解包换了 inode，普通 up -d 会继续用旧配置
+$recreateArgs = ($singleFileServices | ForEach-Object { "--force-recreate $_" }) -join ' '
+Invoke-Remote "cd $appDir && docker compose up -d --build $recreateArgs"
+Write-Host '已完成 compose 更新。' -ForegroundColor Green
+
+# ---- 6 健康检查 ----
+function Test-Health {
+    # **在服务器本机探测，不是在发版机上**：服务端口往往只对本地或内网开放，
+    # 从工作站探测大概率连不上 —— 那会触发一次本不该发生的自动回滚，
+    # 然后报一个跟真实原因毫无关系的错（"部署失败"而其实部署是好的）。
+    for ($i = 1; $i -le 12; $i++) {
+        $code = (& $ssh @sshArgs -o BatchMode=yes -o ConnectTimeout=10 $remoteHost `
+                "curl -s -o /dev/null -w '%{http_code}' --max-time 10 $healthUrl" 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0 -and $code -eq '200') { return $true }
+        Write-Host "  第 $i 次健康检查：HTTP $code" -ForegroundColor DarkGray
+        Start-Sleep -Seconds 5
+    }
+    return $false
+}
+
+if ($DryRun) { Write-Host '[dry-run] 跳过健康检查' -ForegroundColor DarkGray; exit 0 }
+
+if (Test-Health) {
+    Write-Host "健康检查通过：$healthUrl" -ForegroundColor Green
+    if (Test-Path -LiteralPath $statePath) {
+        $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+        $state.backendImageDigests = @{ deployed = "$stamp" }
+        $tmp = "$statePath.tmp"
+        $state | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $tmp -Encoding utf8NoBOM
+        Move-Item -LiteralPath $tmp -Destination $statePath -Force
+    }
+    exit 0
+}
+
+Write-Host '健康检查未通过。' -ForegroundColor Red
+if ($NoRollback) { throw '部署失败且指定了 -NoRollback，请人工处理。' }
+
+# ---- 7 回滚 ----
+Write-Host "回滚：解回 $backupRemote 并重建 ..." -ForegroundColor Yellow
+Invoke-Remote "tar xzf $backupRemote -C $appDir && cd $appDir && docker compose up -d --build $recreateArgs"
+if (Test-Health) {
+    Write-Host '已回滚，服务恢复正常。' -ForegroundColor Yellow
+    exit 2   # 非 0：调用方要知道这次发版没有成功
+}
+throw '回滚后健康检查仍失败，需要人工介入。'

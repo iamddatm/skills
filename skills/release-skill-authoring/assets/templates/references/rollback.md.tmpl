@@ -1,0 +1,62 @@
+# 回滚（{{PROJECT_NAME}}）
+
+回滚同样是**对外动作**，动手前先问用户。
+
+| 组件 | 能不能回滚 | 怎么做 |
+|---|---|---|
+{{#if DATABASE_ENABLED}}| 数据库 | 部分 | 可逆迁移跑 down；不可逆的只能恢复备份 |
+{{/if}}| 后端 | 能 | 旧 digest 重新 `up`；源码级用发版前的备份 tar |
+{{#if FRONTEND_ENABLED}}| 前端 | 能 | 翻回上一个版本目录的指针 |
+{{/if}}{{#if CLIENT_ENABLED}}| 客户端 | **不能** | 只能**前滚**：用旧代码打更高版本号重发 |
+| 清单 | 基本无效 | 客户端只认更高的 `seq`/版本号，回退清单它不理会 —— 走前滚 |
+{{/if}}
+## 前置：先判断「是不是真的需要回滚」
+
+回滚本身也有风险（{{#if DATABASE_ENABLED}}数据库回不去、{{/if}}用户已更新到新版）。先回答三个问题：
+
+1. 影响面多大？全量用户还是个别？（部分用户的问题常常另有原因，别急着重发）
+2. 数据有没有被写坏？写坏了的话回滚代码救不回来，得先恢复数据。
+3. 能不能**前滚修复**？一个小补丁发一版通常比回滚更快也更安全。
+
+{{#if DATABASE_ENABLED}}## 数据库
+
+```bash
+# 可逆：降到上一版
+pwsh -NoProfile -File scripts/migrate.ps1 -Direction Down -ToVersion <上一版>
+
+# 不可逆：恢复发版前的备份（备份文件名与 sha256 在 migrate.ps1 的输出里）
+{{DB_RESTORE_COMMAND}}
+```
+
+恢复备份会**丢掉备份之后的所有写入**。先确认这段窗口内的数据能不能丢。
+
+{{/if}}## 后端
+
+```bash
+# 源码级（最常用）
+ssh <host> 'tar xzf /root/{{SLUG}}-src-<时间戳>.tgz -C {{DEPLOY_APP_DIR}} && cd {{DEPLOY_APP_DIR}} && docker compose up -d --build'
+
+# 镜像级：用 release-state.json 里的旧 digest
+```
+
+{{#if CLIENT_ENABLED}}只能回到「仍满足当前最低支持版本」的那个版本 —— 更老的版本可能不兼容现在的客户端。{{/if}}
+
+{{#if FRONTEND_ENABLED}}## 前端
+
+翻回上一个版本目录的指针，并确认 `index.html` 的缓存头仍是 `no-store`
+（翻指针后如果壳被缓存，用户看到的还是新壳）。
+
+{{/if}}{{#if CLIENT_ENABLED}}## 客户端：只能前滚
+
+```bash
+# 用旧代码打一个**更高**的版本号
+node scripts/engine/release-version.mjs --config {{REPO_REL}}/release/release.config.json --print
+# 然后走完整发版流程；不要改小版本号，也不要回退版本文件或删标签
+```
+
+{{/if}}## 回滚之后
+
+- 更新 `{{REPO_REL}}/release/release-state.json`，别让下一轮的变更检测基准对不上；
+- **把回滚这件事说清楚**：回滚了哪个组件、为什么、影响面、有没有数据损失。
+  悄悄回滚会让下一个人完全看不懂仓库状态。
+- 如果同样的原因可能再犯，在 `runbook.md` 里补一条门禁，而不是只记住这次。

@@ -1,0 +1,226 @@
+<#
+.SYNOPSIS
+  {{PROJECT_NAME}} 安装包端到端验证：本机伪源 + 静默安装 + 逐文件对账。
+
+.DESCRIPTION
+  验的是「装完到底是不是最新版」，不是「安装程序有没有报错」。两个场景缺一不可：
+
+    A（有新版）：伪源里放一份**版本高于安装包基线**的清单与更新包 → 静默安装 →
+                 断言被覆盖的业务文件与**更新包里的那一份逐字节相同**；
+    B（无新版）：清单版本 == 安装包基线 → 静默安装 →
+                 断言装出来的目录与基线**逐文件哈希全等**。
+
+  只验 A 会漏掉「明明没新版却改了文件」；只验 B 会漏掉「有新版却不更新」。
+
+  伪源由 scripts/engine/mock-update-source.mjs 起（比 PowerShell 的 HttpListener 可靠）。
+  清单由 scripts/engine/release-manifest.mjs 以 --standalone 生成 —— 顺带把真实的清单生成
+  路径也验了一遍，而且不会碰项目自己的发版状态。文件放哪儿由它产出的 publish-plan.json 决定：
+  发布文件名里带随机 hash，是生成清单那一刻才定下来的，不能靠猜。
+
+.PARAMETER InstallerPath
+  已构建好的 setup.exe。省略则用 build-installer.ps1 -UpdateBase 现编一个指向伪源的。
+
+.PARAMETER BaselineDir
+  安装包内置的基线目录（与 build-installer.ps1 的 -PayloadDir 一致）。
+
+.PARAMETER BaselineVersion
+  安装包的基线版本。省略则按配置里的 installer.payloadVersionCommand 从已构建产物读。
+
+.PARAMETER KeepTemp
+  保留临时目录，便于排障。
+#>
+param(
+    [string]$InstallerPath,
+    [string]$BaselineDir = '{{CLIENT_BUILD_OUTPUT_DIR}}',
+    [string]$BaselineVersion,
+    [int]$Port = 8099,
+    [switch]$KeepTemp
+)
+
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSVersion.Major -lt 6) { throw '请使用 PowerShell 7：pwsh -File' }
+
+# 本脚本在 <项目>/.claude/skills/<slug>-release/scripts/ 下，不在仓库根 ——
+# 层级由脚手架按实际位置算出来，不要手写
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '{{REPO_REL_FROM_SCRIPTS}}')).Path
+$engineDir = Join-Path $PSScriptRoot 'engine'
+$configPath = Join-Path $repoRoot 'release/release.config.json'
+$distDir = Join-Path $repoRoot 'release/dist'
+$baselineFull = Join-Path $repoRoot $BaselineDir
+$mockDir = Join-Path $env:TEMP "{{SLUG}}-mock-$(Get-Random)"
+$installDir = Join-Path $env:TEMP "{{SLUG}}-verify-$(Get-Random)"
+$extractDir = Join-Path $env:TEMP "{{SLUG}}-payload-$(Get-Random)"
+
+# Windows 上走系统 bsdtar：它能按扩展名自动选格式（zip / tar.gz 都行），
+# 且与客户端解包用的是同一套工具
+$tarExe = Join-Path $env:SystemRoot 'System32/tar.exe'
+if (-not (Test-Path -LiteralPath $tarExe)) { $tarExe = 'tar' }
+
+if (-not (Test-Path -LiteralPath $baselineFull)) { throw "找不到基线目录：$baselineFull" }
+if (-not (Test-Path -LiteralPath $configPath)) { throw "找不到配置：$configPath" }
+
+if (-not $BaselineVersion) {
+    # 与 build-installer.ps1 同源：读配置里的命令模板，别在两处各写一份读取方式
+    $versionTemplate = (Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json).installer.payloadVersionCommand
+    if (-not $versionTemplate) { throw '配置里缺 installer.payloadVersionCommand。见 references/versions.md。' }
+    $BaselineVersion = "$(Invoke-Expression $versionTemplate)".Trim()
+}
+$BaselineVersion = "$BaselineVersion".Trim()
+if ($BaselineVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') {
+    throw "拿不到合法的基线版本号（$BaselineVersion）。用 -BaselineVersion 显式指定。"
+}
+# 比基线高一版：抬自增数那段，保证严格大于
+$parts = $BaselineVersion.Split('.')
+$parts[1] = [string]([int]$parts[1] + 1)
+$NewerVersion = $parts -join '.'
+
+$mockProcess = $null
+function Stop-Mock {
+    if ($mockProcess -and -not $mockProcess.HasExited) { Stop-Process -Id $mockProcess.Id -Force -ErrorAction SilentlyContinue }
+}
+function Assert-True([bool]$condition, [string]$message) {
+    if ($condition) { Write-Host "  ✓ $message" -ForegroundColor Green } else { throw "断言失败：$message" }
+}
+function Get-FileSha([string]$path) { return (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLower() }
+function Get-TreeHashes([string]$directory) {
+    $map = @{}
+    Get-ChildItem -LiteralPath $directory -Recurse -File | ForEach-Object {
+        $relative = $_.FullName.Substring($directory.Length).TrimStart('\', '/').Replace('\', '/')
+        $map[$relative] = Get-FileSha $_.FullName
+    }
+    return $map
+}
+
+<#
+  在伪源目录铺一份可用的更新源：
+    1. 用引擎的清单生成器写 manifest.json（--standalone：不动发版状态、不写归档）；
+    2. 按它产出的 publish-plan.json，把本地产物复制到清单里写的相对路径上。
+
+  第 2 步不能省、也不能靠猜：发布文件名带随机 hash，只有生成清单那一刻才知道。
+#>
+function New-MockSource {
+    param([string]$OutDir, [string]$Version)
+
+    $payload = Get-ChildItem -Path $distDir -Filter '*payload*' -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $payload) { throw "找不到更新包（$distDir）。先跑 release-package.mjs 产出。" }
+
+    $artifactsPath = Join-Path $OutDir 'artifacts.json'
+    @{ payload = $payload.FullName; notes = '本机伪源验证用的说明。' } |
+        ConvertTo-Json | Set-Content -LiteralPath $artifactsPath -Encoding utf8NoBOM
+
+    $nodeArgs = @(
+        (Join-Path $engineDir 'release-manifest.mjs'),
+        '--config', $configPath,
+        '--artifacts', $artifactsPath,
+        '--version', $Version,
+        '--min-version', $Version,
+        '--out', (Join-Path $OutDir 'manifest.json'),
+        '--standalone'
+    )
+    & node @nodeArgs
+    if ($LASTEXITCODE -ne 0) { throw "生成伪源清单失败（版本 $Version）。" }
+
+    $planPath = Join-Path $OutDir 'publish-plan.json'
+    if (-not (Test-Path -LiteralPath $planPath)) { throw "清单生成器没有产出发布计划：$planPath" }
+    $plan = Get-Content -LiteralPath $planPath -Raw | ConvertFrom-Json
+    foreach ($file in $plan.files) {
+        $target = Join-Path $OutDir $file.published
+        New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+        Copy-Item -LiteralPath $file.source -Destination $target -Force
+    }
+    return $plan
+}
+
+function Invoke-SilentInstall([string]$Target, [string]$LogPath) {
+    if (Test-Path -LiteralPath $Target) { Remove-Item -LiteralPath $Target -Recurse -Force }
+    Start-Process -Wait -FilePath $InstallerPath -ArgumentList @(
+        '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$Target", "/LOG=$LogPath"
+    )
+}
+
+try {
+    New-Item -ItemType Directory -Path $mockDir -Force | Out-Null
+    $mockProcess = Start-Process -FilePath 'node' -PassThru -NoNewWindow `
+        -ArgumentList @((Join-Path $engineDir 'mock-update-source.mjs'), '--dir', $mockDir, '--port', "$Port", '--quiet')
+    Start-Sleep -Seconds 2
+    if ($mockProcess.HasExited) { throw '伪源启动失败。' }
+    $updateBase = "http://127.0.0.1:${Port}"
+    Write-Host "伪源已启动：$updateBase（根 $mockDir）" -ForegroundColor Cyan
+    Write-Host "基线 $BaselineVersion → 本次伪源版本 $NewerVersion" -ForegroundColor DarkGray
+
+    # ---- 场景 A ----
+    Write-Host "`n场景 A：伪源提供更高版本（$NewerVersion）" -ForegroundColor Cyan
+    $plan = New-MockSource -OutDir $mockDir -Version $NewerVersion
+
+    if (-not $InstallerPath) {
+        Write-Host '现编一个指向伪源的安装包 ...' -ForegroundColor DarkGray
+        & (Join-Path $PSScriptRoot 'build-installer.ps1') -Version $BaselineVersion -UpdateBase $updateBase
+        if ($LASTEXITCODE -ne 0) { throw '安装包构建失败。' }
+        $InstallerPath = Get-ChildItem -Path (Join-Path $repoRoot '{{INSTALLER_DIR}}') -Filter '*.exe' -Recurse -ErrorAction SilentlyContinue |
+            Sort-Object LastWriteTime -Descending | Select-Object -First 1 -ExpandProperty FullName
+    }
+    if (-not $InstallerPath -or -not (Test-Path -LiteralPath $InstallerPath)) { throw '找不到安装包。' }
+
+    $logA = Join-Path $env:TEMP '{{SLUG}}-install-A.log'
+    Invoke-SilentInstall -Target $installDir -LogPath $logA
+
+    # 把更新包解开，拿它里面的业务文件当「正确答案」。
+    # 逐个比对全部业务文件，而不是断言某一个写死的「探针文件」：探针会随项目改动默默失效
+    # （配的那个文件被改名/删除后，这条断言就再也验不到东西了），而
+    # 「更新包里的每个文件都进了安装目录、且内容一致」才是这个场景真正要验的事。
+    New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
+    $payloadEntry = $plan.files | Where-Object { $_.kind -eq 'payload' } | Select-Object -First 1
+    if (-not $payloadEntry) { throw '发布计划里没有 payload 产物。' }
+    & $tarExe -xf (Join-Path $mockDir $payloadEntry.published) -C $extractDir
+    if ($LASTEXITCODE -ne 0) { throw '解不开更新包。' }
+
+    $payloadHashes = Get-TreeHashes $extractDir
+    Assert-True ($payloadHashes.Count -gt 0) '更新包里有业务文件'
+    $notInstalled = @()
+    $contentMismatch = @()
+    foreach ($relative in $payloadHashes.Keys) {
+        $target = Join-Path $installDir $relative
+        if (-not (Test-Path -LiteralPath $target)) { $notInstalled += $relative }
+        elseif ((Get-FileSha $target) -ne $payloadHashes[$relative]) { $contentMismatch += $relative }
+    }
+    # 先打完诊断再断言：Assert-True 失败即抛，写在它后面的排查信息永远看不到
+    if ($notInstalled.Count -gt 0) {
+        Write-Host ("  缺失（前 5 个）：" + (($notInstalled | Select-Object -First 5) -join ', ')) -ForegroundColor Yellow
+    }
+    if ($contentMismatch.Count -gt 0) {
+        Write-Host ("  内容不同（前 5 个）：" + (($contentMismatch | Select-Object -First 5) -join ', ')) -ForegroundColor Yellow
+    }
+    Assert-True ($notInstalled.Count -eq 0) "更新包里每个业务文件都装进了安装目录（缺 $($notInstalled.Count) 个）"
+    Assert-True ($contentMismatch.Count -eq 0) "装出来的业务文件与更新包逐字节相同（$($contentMismatch.Count) 个不同）"
+    Write-Host "  安装日志：$logA" -ForegroundColor DarkGray
+
+    # ---- 场景 B ----
+    Write-Host "`n场景 B：伪源版本 == 基线（$BaselineVersion），不该有任何覆盖" -ForegroundColor Cyan
+    $null = New-MockSource -OutDir $mockDir -Version $BaselineVersion
+
+    $logB = Join-Path $env:TEMP '{{SLUG}}-install-B.log'
+    Invoke-SilentInstall -Target $installDir -LogPath $logB
+
+    $baselineHashes = Get-TreeHashes $baselineFull
+    $installedHashes = Get-TreeHashes $installDir
+    $missing = @($baselineHashes.Keys | Where-Object { -not $installedHashes.ContainsKey($_) })
+    $extra = @($installedHashes.Keys | Where-Object { -not $baselineHashes.ContainsKey($_) })
+    $differing = @($baselineHashes.Keys | Where-Object { $installedHashes.ContainsKey($_) -and $installedHashes[$_] -ne $baselineHashes[$_] })
+    Assert-True ($missing.Count -eq 0) "没有少装的文件（缺 $($missing.Count) 个）"
+    Assert-True ($extra.Count -eq 0) "没有多装的文件（多 $($extra.Count) 个）"
+    Assert-True ($differing.Count -eq 0) "不与基线冲突（$($differing.Count) 个文件内容不同）"
+
+    Write-Host "`n✓ 两个场景都通过。" -ForegroundColor Green
+    Write-Host '提醒：验证用的安装包把更新源指向了 127.0.0.1，**不要拿去分发**；正式包要重新构建。' -ForegroundColor Yellow
+}
+finally {
+    Stop-Mock
+    if ($KeepTemp) { Write-Host "临时目录保留：$mockDir / $installDir / $extractDir" -ForegroundColor DarkGray }
+    else {
+        foreach ($directory in @($mockDir, $installDir, $extractDir)) {
+            Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}

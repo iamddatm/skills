@@ -1,0 +1,163 @@
+<#
+.SYNOPSIS
+  {{PROJECT_NAME}} 数据库迁移：备份 → 迁移 → 记录版本。
+
+.DESCRIPTION
+  顺序固定为「备份 → 迁移 → 记录」，不可调换：迁移失败时唯一能救回来的是备份，
+  而备份必须在迁移**之前**做完并验证过。
+
+  迁移脚本放在 {{DB_MIGRATIONS_DIR}}，命名为
+    <版本>.up.sql / <版本>.down.sql
+  可逆性靠文件名与脚本头部注释声明；不可逆的迁移必须显式加 -AllowIrreversible。
+
+.PARAMETER Direction
+  Up 或 Down。Down 只在迁移确实可逆时用；不可逆时正确的做法是恢复备份。
+
+.PARAMETER ToVersion
+  目标版本。Up 时省略则跑到最新；Down 时必须给（降到哪一版）。
+
+.PARAMETER AllowIrreversible
+  允许执行被标记为不可逆的迁移。**必须同时有已验证的备份产物**，脚本会检查。
+
+.PARAMETER BackupOnly
+  只做备份不迁移（发版前想单独确认备份可用时用）。
+
+.EXAMPLE
+  pwsh -NoProfile -File scripts/migrate.ps1 -Direction Up
+.EXAMPLE
+  pwsh -NoProfile -File scripts/migrate.ps1 -Direction Down -ToVersion 2026.10.14.1
+#>
+param(
+    [ValidateSet('Up', 'Down')][string]$Direction = 'Up',
+    [string]$ToVersion,
+    [switch]$AllowIrreversible,
+    [switch]$BackupOnly
+)
+
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$ErrorActionPreference = 'Stop'
+if ($PSVersionTable.PSVersion.Major -lt 6) { throw '请使用 PowerShell 7：pwsh -File' }
+
+# 本脚本在 <项目>/.claude/skills/<slug>-release/scripts/ 下，不在仓库根 ——
+# 层级由脚手架按实际位置算出来，不要手写
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '{{REPO_REL_FROM_SCRIPTS}}')).Path
+$releaseDir = Join-Path $repoRoot 'release'
+$statePath = Join-Path $releaseDir 'release-state.json'
+$migrationDir = Join-Path $repoRoot '{{DB_MIGRATIONS_DIR}}'
+# 备份输出目录：**不要**放进迁移目录，否则会被当成待执行的迁移
+$backupDir = Join-Path $repoRoot '{{DB_BACKUP_DIR}}'
+
+if (-not (Test-Path -LiteralPath $migrationDir)) { throw "找不到迁移目录：$migrationDir" }
+if (-not (Test-Path -LiteralPath $backupDir)) { New-Item -ItemType Directory -Path $backupDir -Force | Out-Null }
+
+# ---- 连接参数一律从环境变量读，不落盘、不进仓库 ----
+$env_vars = @{
+    '{{DB_CONNECTION_ENV}}' = '迁移用的连接串（数据库客户端命令需要）'
+}
+foreach ($name in $env_vars.Keys) {
+    if (-not [Environment]::GetEnvironmentVariable($name)) {
+        throw "缺少环境变量 $name —— $($env_vars[$name])。凭据只走环境变量，不要写进脚本或配置文件。"
+    }
+}
+
+# 备份/执行的命令从配置里读，不烘进脚本：它是**命令模板**（带 {out} / {file} 占位符），
+# 里头的引号与 $env: 变量原样保留才有效；烘进单引号字符串会被 PowerShell 解析坏。
+$config = Get-Content -LiteralPath (Join-Path $releaseDir 'release.config.json') -Raw | ConvertFrom-Json
+$backupTemplate = $config.database.backupCommand
+$execTemplate = $config.database.execCommand
+foreach ($pair in @(@('backupCommand', $backupTemplate), @('execCommand', $execTemplate))) {
+    if (-not $pair[1]) { throw "配置里缺 database.$($pair[0])。见 references/database.md 的命令模板写法。" }
+}
+
+<#
+  按模板执行外部命令。
+  支持的占位符只有两个：{out}（备份产物路径）、{file}（迁移脚本路径）。
+  这样脚本不必知道项目用哪种客户端 —— 写成 `& <命令> --out <文件>` 是错的：
+  mysqldump 不认 --out、pg_dump 不用 --file，每个项目都得回来改脚本。
+#>
+function Invoke-CommandTemplate([string]$template, [hashtable]$values) {
+    $command = $template
+    foreach ($key in $values.Keys) { $command = $command.Replace("{$key}", [string]$values[$key]) }
+    if ($command -match '\{[a-zA-Z]+\}') {
+        throw "命令模板里有没被替换的占位符：$template`n只支持 {out} 与 {file}。"
+    }
+    Write-Host "    $command" -ForegroundColor DarkGray
+    Invoke-Expression $command
+}
+
+function Get-StateVersion([string]$path) {
+    if (-not (Test-Path -LiteralPath $path)) { return '' }
+    return [string]((Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).versions.database)
+}
+
+$currentVersion = Get-StateVersion $statePath
+$currentDisplay = if ($currentVersion) { $currentVersion } else { '（状态文件里没有记录）' }
+Write-Host "当前数据库版本：$currentDisplay" -ForegroundColor Cyan
+
+# ---- 1 备份（永远先做）----
+# 这是硬门禁，不是可选项：迁移失败时唯一能救回来的东西。
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$backupFile = Join-Path $backupDir "backup-$stamp.sql"
+Write-Host "备份到 $backupFile ..." -ForegroundColor Cyan
+Invoke-CommandTemplate $backupTemplate @{ out = $backupFile }
+if (-not (Test-Path -LiteralPath $backupFile) -or (Get-Item -LiteralPath $backupFile).Length -eq 0) {
+    throw "备份产物为空或不存在：$backupFile —— 到此为止，不要继续迁移。"
+}
+$backupHash = (Get-FileHash -LiteralPath $backupFile -Algorithm SHA256).Hash.ToLower()
+Write-Host "备份完成：$([math]::Round((Get-Item -LiteralPath $backupFile).Length / 1MB, 1)) MB，sha256 $($backupHash.Substring(0,12))" -ForegroundColor Green
+
+if ($BackupOnly) { Write-Host '只做备份，结束。' -ForegroundColor Green; exit 0 }
+
+# ---- 2 挑出待执行的迁移 ----
+$pattern = if ($Direction -eq 'Up') { '*.up.sql' } else { '*.down.sql' }
+$all = Get-ChildItem -LiteralPath $migrationDir -Filter $pattern -File | Sort-Object Name
+if ($Direction -eq 'Up') {
+    $pending = @($all | Where-Object { $_.BaseName -replace '\.up$', '' | Where-Object { $_ -gt $currentVersion } })
+} else {
+    if (-not $ToVersion) { throw 'Down 必须给 -ToVersion（降到哪一版）。' }
+    $pending = @($all | Where-Object { $_.BaseName -replace '\.down$', '' | Where-Object { $_ -le $currentVersion -and $_ -gt $ToVersion } } |
+        Sort-Object Name -Descending)
+}
+
+if ($pending.Count -eq 0) { Write-Host '没有待执行的迁移。' -ForegroundColor Green; exit 0 }
+
+# ---- 3 不可逆守卫 ----
+# 迁移脚本头部写 `-- irreversible: true` 即视为不可逆（drop column / truncate 之类）。
+$irreversible = @()
+foreach ($file in $pending) {
+    $head = Get-Content -LiteralPath $file.FullName -TotalCount 20 -Raw
+    if ($head -match '(?im)^\s*--\s*irreversible\s*:\s*true') { $irreversible += $file.Name }
+}
+if ($irreversible.Count -gt 0) {
+    Write-Host "本次含不可逆迁移：" -ForegroundColor Yellow
+    $irreversible | ForEach-Object { Write-Host "  - $_" -ForegroundColor Yellow }
+    if (-not $AllowIrreversible) {
+        throw '拒绝执行不可逆迁移。破坏性变更应走 expand/contract：本次只做加法，删除放到 N+2。确要执行加 -AllowIrreversible（会校验备份产物）。'
+    }
+    if (-not (Test-Path -LiteralPath $backupFile)) { throw '允许不可逆迁移却没有备份产物 —— 拒绝执行。' }
+    Write-Host "不可逆迁移已放行，备份 sha256 $($backupHash.Substring(0,12))。回滚只能靠它恢复。" -ForegroundColor Yellow
+}
+
+# ---- 4 执行 ----
+foreach ($file in $pending) {
+    Write-Host "执行 $($file.Name) ..." -ForegroundColor Cyan
+    try {
+        Invoke-CommandTemplate $execTemplate @{ file = $file.FullName }
+    } catch {
+        throw "迁移 $($file.Name) 失败：$($_.Exception.Message)`n数据库可能处于中间状态 —— 先看备份与 down 脚本，不要盲目重跑。"
+    }
+}
+
+# ---- 5 记录版本 ----
+$finalVersion = ($pending | Select-Object -Last 1).BaseName -replace '\.(up|down)$', ''
+if ($Direction -eq 'Down') { $finalVersion = $ToVersion }
+if (Test-Path -LiteralPath $statePath) {
+    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    $state.versions.database = $finalVersion
+    # 原子写：临时文件 + 改名，避免中途断电留下半截 JSON
+    $tmp = "$statePath.tmp"
+    $state | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $tmp -Encoding utf8NoBOM
+    Move-Item -LiteralPath $tmp -Destination $statePath -Force
+}
+Write-Host "迁移完成，数据库版本：$finalVersion" -ForegroundColor Green
+Write-Host "备份留存：$backupFile（sha256 $($backupHash.Substring(0,12))）" -ForegroundColor DarkGray

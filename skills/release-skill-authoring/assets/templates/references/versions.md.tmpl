@@ -1,0 +1,56 @@
+# 版本号（{{PROJECT_NAME}}）
+
+## 规则
+
+四段「**年.自增数.月.日**」，如 `26.11.10.14`：两位年号 + 年内自增数（每次发布 +1，跨年重置）
++ 发布当天的月、日。排序语义 年 > 自增数 > 月 > 日，自增数每次必增，所以新版本严格更大。
+{{#if CLIENT_ENABLED}}
+**客户端的对外版本号 = 更新包版本号**。全量包与安装包用同一个版本号（它们是同一份代码的不同形态）；
+运行时基线单独用 `clientFullBaseline` 表达。{{/if}}
+
+## 本项目从哪里读
+
+| 场景 | 来源 |
+|---|---|
+| 计算下一版 | `node scripts/engine/release-version.mjs --print`（三源取大） |
+{{#if CLIENT_ENABLED}}| 线上权威值 | `{{MANIFEST_URL}}` 的 `version` |
+{{/if}}| 本地上一次 | `{{REPO_REL}}/release/release-state.json` 的 `versions.<组件>` |
+{{#if CLIENT_ENABLED}}| 打安装包 | `installer.payloadVersionCommand`（**从已构建产物读**，不读单独的版本文件） |
+{{/if}}
+{{#if CLIENT_ENABLED}}> `installer.payloadVersionCommand` 是一段 PowerShell 表达式（在 `release.config.json` 里配，
+> 不烘进脚本），`build-installer.ps1` 与 `verify-installer.ps1` 都从它读，两边不会各写一份。
+> 变量 `$payloadFull`（构建产物目录）对模板可见。写成说明文字会被脚手架直接拒绝 —— 实测踩过这一步：
+> 填了「从已构建产物读版本」这样一句话，一路通过所有自检，直到打安装包时才炸。
+>
+> ```jsonc
+> // .NET 桌面端
+> "payloadVersionCommand": "(Get-Item \"$payloadFull/MyApp.exe\").VersionInfo.FileVersion"
+> // Electron
+> "payloadVersionCommand": "(Get-Content \"$payloadFull/resources/app/package.json\" -Raw | ConvertFrom-Json).version"
+> ```
+
+{{/if}}> 不要用独立的版本文件当权威来源：它容易和打进包的产物漂移，而用户看到的版本号是产物里那个。
+
+## 命令
+
+```bash
+# 取号（阶段 3 用）：裸版本号打到 stdout（提示走 stderr），可 $(...) 捕获。**本脚本不写状态**
+node scripts/engine/release-version.mjs --config {{REPO_REL}}/release/release.config.json --print
+
+# 阶段 7 把号显式传给清单生成器；落库由它发布成功时完成
+node scripts/engine/release-manifest.mjs --config {{REPO_REL}}/release/release.config.json \
+  --artifacts {{REPO_REL}}/release/artifacts.json --version "$NEXT" --notes '<更新说明>'
+```
+
+## 三条纪律
+
+1. **比较按段比整数**，不是字符串（`26.10.1.1 > 26.9.1.1`）。比反了会把升级判成降级，
+   收端于是永远不更新。Node 侧的实现在 `lib/version.mjs`{{#if CLIENT_ENABLED}}，Pascal 侧是 `CompareVersions`{{/if}}；
+   两处口径必须一致。
+2. **版本号只进不退**。同版本禁止重发；要修内容就抬自增数。服务端会拒绝写出 ≤ 上一版的清单。
+3. **回滚靠打更高版本号重发，不要改小号**：收端只认更高的版本{{#if CLIENT_ENABLED}}，客户端尤其如此（装出去的版本收不回来）{{/if}}。
+
+## 校验
+
+一律用显式正则 `^\d+\.\d+\.\d+\.\d+$`。不要用 `[version]` 之类的强转 ——
+它会接受 2~4 段，挡不住三段号。

@@ -1,0 +1,68 @@
+# 后端部署（{{PROJECT_NAME}}）
+
+## 本项目参数
+
+| 项 | 值 |
+|---|---|
+| compose 文件 | `{{COMPOSE_FILE}}` |
+| 服务 | `{{COMPOSE_SERVICES}}` |
+| 单文件只读挂载的服务 | `{{COMPOSE_SINGLE_FILE_MOUNTS}}` |
+| 部署目录（远端） | `{{DEPLOY_APP_DIR}}` |
+| 目标主机 | 环境变量 `{{DEPLOY_HOST_ENV}}`（**不入库**） |
+| 私钥 | 环境变量 `{{DEPLOY_KEY_ENV}}`，由部署负责人单独交付（**不入库、不借用他人密钥**） |
+| 健康检查 | `{{HEALTHCHECK_URL}}` |
+| 停机策略 | `{{STOP_WINDOW}}`（接受短暂停机，DB 迁移在同一窗口） |
+
+远程操作一律用系统自带的 OpenSSH（`$env:SystemRoot\System32\OpenSSH\{ssh,scp}.exe`），
+不要用 Git Bash 里的同名工具 —— 行为不同，排障时会对不上。
+
+## 命令
+
+```bash
+pwsh -NoProfile -File scripts/deploy-backend.ps1                    # 完整部署（失败自动回滚）
+pwsh -NoProfile -File scripts/deploy-backend.ps1 -DryRun            # 只打印将执行的远端命令
+```
+
+顺序固定：**备份线上源码 → 上传 → 解包 → compose up -d → 健康检查**。
+
+## 部署的四个要点
+
+1. **镜像按 digest 固定，不要用 `latest`**。latest 回滚不了 —— 下次 `up` 还是拉到同一个 latest。
+   digest 记在 `{{REPO_REL}}/release/release-state.json` 的 `backendImageDigests`。
+2. **单文件只读挂载必须 `--force-recreate`**。`{{COMPOSE_SINGLE_FILE_MOUNTS}}` 里的服务，
+   解包后文件 inode 变了，普通 `up -d` **不会重建容器**，容器会一直用旧配置。
+   改过这类配置要先验配置再重建（配错会让容器 restart loop、对外 502）。
+3. **持久化目录不要删**：`{{COMPOSE_PERSISTENT_DIRS}}` 靠挂卷持久化，
+   打包时也要 `--exclude` 掉。
+4. **健康检查失败自动回滚**，并用旧 digest 重新拉起 —— 脚本返回非 0，调用方要当成发版失败。
+
+## 检查点
+
+```bash
+# 容器状态与日志
+ssh <host> 'cd {{DEPLOY_APP_DIR}} && docker compose ps'
+ssh <host> 'cd {{DEPLOY_APP_DIR}} && docker logs --tail 30 <api服务> | grep -iE "error|fail|exception" || echo "（日志无错误）"'
+
+# 对外可用性（服务端口往往只对本地/内网开放，所以是在服务器本机 curl，不是从发版机）
+ssh <host> "curl -s -o /dev/null -w '%{http_code}' {{HEALTHCHECK_URL}}"
+```
+
+{{#if CLIENT_ENABLED}}发版后还要跑一次线上体检（清单可达、包的 sha256、缓存头、版本不倒退）——
+它验的是**客户端能不能更新**，只在有客户端的项目里适用：
+
+```bash
+node scripts/engine/release-verify.mjs --config {{REPO_REL}}/release/release.config.json
+```
+
+{{/if}}
+
+## 回滚
+
+```bash
+# 源码级：解回发版前的备份并重建
+ssh <host> 'tar xzf /root/{{SLUG}}-src-<时间戳>.tgz -C {{DEPLOY_APP_DIR}} && cd {{DEPLOY_APP_DIR}} && docker compose up -d --build'
+
+# 镜像级：用 release-state.json 里的旧 digest 重新 up
+```
+
+只能回到「仍满足当前最低支持版本」的那个后端版本；超出的走前滚修复，不假装能回。

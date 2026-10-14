@@ -1,0 +1,59 @@
+# 前端发布（{{PROJECT_NAME}}）
+
+## 本项目参数
+
+| 项 | 值 |
+|---|---|
+| 发布形态 | `{{FRONTEND_MODE}}`（independent = 独立静态站 / served-by-backend = 随后端一起） |
+| 构建命令 | `{{FRONTEND_BUILD_COMMAND}}` |
+| 产物目录 | `{{FRONTEND_OUTPUT_DIR}}` |
+| 发布目标 | {{FRONTEND_PUBLISH_TARGET}} |
+| 源码 glob（变更检测用） | `{{COMPONENT_FRONTEND_GLOBS}}` |
+
+## 构建
+
+```bash
+{{FRONTEND_BUILD_COMMAND}}
+```
+
+构建产物的文件名里必须带**内容哈希**（`app.3f2ac9.js`）—— 这是长缓存策略的前提。
+
+## 缓存策略
+
+| 资源 | Cache-Control |
+|---|---|
+| `index.html`、service worker | `no-cache, no-store, must-revalidate` |
+| 带内容哈希的静态资源 | `public, max-age=31536000, immutable` |
+
+**反了会怎样**：`index.html` 被缓存 → 用户拿到旧壳配新资源 → 白屏或功能异常，
+而且**刷新也没用**（刷新拿到的还是缓存里的壳）。这是排查起来最费时间的一类问题：
+服务端一切正常，只有部分用户异常。
+
+## 原子发布
+
+```
+1 上传到版本目录 /dist/<version>/
+2 全部就位后，原子翻指针（或最后覆盖 index.html）
+```
+
+**不要**就地覆盖 `index.html` 再慢慢传资源 —— 中间那个窗口里用户会拿到半新半旧的页面。
+
+## 如果随后端一起发布
+
+`{{FRONTEND_MODE}}` 是 `served-by-backend` 时：前端产物打进后端镜像或后端静态目录，
+**随后端一起部署**，缓存头由后端（或反代）控制。此时：
+
+- 阶段 5 构建、阶段 8 部署，不单独发布前端；
+- 但缓存头仍要按上表设置 —— 容器重建不会改变缓存行为。
+
+## 验收
+
+```bash
+# 壳文件必须不缓存
+curl -sI {{FRONTEND_URL}}/index.html | grep -i cache-control
+
+# 带哈希的资源必须长缓存
+curl -sI {{FRONTEND_URL}}/<带哈希的资源> | grep -i cache-control
+```
+
+发版后**打开一次浏览器实际看一眼**：状态码 200 不等于页面能跑。
